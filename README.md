@@ -145,11 +145,25 @@
 
 ## 下载
 
-安装包只在 [Releases](../../releases) 页发布，包括 SHA256 校验和。
+安装包只在 [Releases](../../releases) 页发布。仓库源码里**不包含**任何构建产物。
 
-仓库源码里**不包含**任何构建产物。
+| 附件 | 适用 | 说明 |
+|---|---|---|
+| `JingYuMic-App-3.26.apk` | Android | WebView 外壳，2.7 MB，自签名（覆盖安装需与作者同签名） |
+| `JingYuMic-PC-win32-x64.zip` | Windows x64 | Electron 便携版，解压即用（`JingYuMic-PC.exe`），免安装 |
+| `SHA256SUMS.txt` | — | 上面两个文件的校验和 |
 
-> 已构建的 APK 中仍残留作者内网地址的字符串常量（不影响功能，只影响默认值）。首次启动后请在设置里改成你自己的地址。
+校验方法（PowerShell）：
+
+```powershell
+Get-FileHash .\JingYuMic-App-3.26.apk -Algorithm SHA256
+```
+
+和 `SHA256SUMS.txt` 里那行对一下即可。**任一附件都只是「壳」**——不含网页、不含音乐、不含服务端逻辑，
+装完必须能连到你自己部署的后端（`:58091`）才可用。
+
+> 两个包里都还留着作者内网地址的字符串常量（不影响功能，只影响默认值）。**首次启动后请在设置里改成你自己的地址。**
+> PC 便携版未做代码签名，Windows 可能弹 SmartScreen 提示，选「更多信息 → 仍要运行」。
 
 ## 首次使用需要自己填的东西
 
@@ -165,6 +179,9 @@
 **不提供构建支持。** 下面只是说明现状，不构成帮助承诺：
 
 - `web/` 与 `pc-client/` 是纯静态 + Electron，没有打包流程需要学习
+- **PC 客户端**：`cd pc-client && npm install && npm start` 即可跑；要像 Release 里那样打成便携版，
+  用 `npx @electron/packager . JingYuMic-PC --platform=win32 --arch=x64 --icon=icon.ico`。
+  `electron` 在 `devDependencies` 里，打包时不会被打进 `app.asar`。
 - `android/build.sh` 是作者自用的脚本，依赖本机 SDK 路径；脚本会在缺证书时自动生成一个**调试用**证书，正式发布请换成你自己的
 - `server/server.py` 直接 `python3 server.py` 运行，无第三方依赖清单
 
