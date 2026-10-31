@@ -1,0 +1,13 @@
+{
+  "name": "jingyu-mic-pc",
+  "productName": "鲸屿Mic-PC",
+  "version": "3.95.0",
+  "description": "鲸屿Mic PC 客户端",
+  "main": "main.js",
+  "window": {
+    "icon": "icon.ico"
+  },
+  "dependencies": {
+    "electron": "^45.0.0"
+  }
+}

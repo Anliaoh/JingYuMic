@@ -1,0 +1,506 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2x2 播放卡片（浅色 · 对齐 MIUI 桌面卡片风格，v3.21 结构重做）
+     上：封面 + 歌名/歌手 + 播放键
+     中：四个功能键 搜索 / 输出 / 喜欢 / 已播
+     下：默认滚动歌词；点任一个功能键后原地展开对应面板（设备选择 / 喜欢列表 / 已播列表 / 搜索），
+         再点同一个键收起回到歌词。尺寸仍是 2×2，不放大的。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/wRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingLeft="13dp"
+    android:paddingRight="13dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="10dp"
+    android:background="@drawable/widget_bg_card">
+
+    <!-- ① 歌曲信息行 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/wCover"
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/app_name" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginLeft="11dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/wTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="#16202F"
+                android:textSize="14.5sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wArtist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="@string/w_idle_sub"
+                android:textColor="#6B7688"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/wPlay"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginLeft="6dp"
+            android:padding="2dp"
+            android:background="@null"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_w_play"
+            android:contentDescription="@string/w_play" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/wProg"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="7dp"
+        android:max="100"
+        android:progress="0"
+        android:progressDrawable="@drawable/widget_prog" />
+
+    <!-- ② 四个功能键 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:layout_marginTop="2dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:id="@+id/wTabSch"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/w_tab_bg"
+            android:contentDescription="搜索">
+
+            <ImageView
+                android:layout_width="17dp"
+                android:layout_height="17dp"
+                android:src="@drawable/ic_w_search"
+                android:contentDescription="搜索" />
+
+            <TextView
+                android:id="@+id/wTabSchT"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="搜索"
+                android:textColor="#6B7688"
+                android:textSize="9.5sp"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/wTabOut"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/w_tab_bg"
+            android:contentDescription="输出设备">
+
+            <ImageView
+                android:layout_width="17dp"
+                android:layout_height="17dp"
+                android:src="@drawable/ic_w_out"
+                android:contentDescription="输出" />
+
+            <TextView
+                android:id="@+id/wTabOutT"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="输出"
+                android:textColor="#6B7688"
+                android:textSize="9.5sp"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/wTabFav"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/w_tab_bg"
+            android:contentDescription="喜欢">
+
+            <ImageView
+                android:layout_width="17dp"
+                android:layout_height="17dp"
+                android:src="@drawable/ic_w_fav"
+                android:contentDescription="喜欢" />
+
+            <TextView
+                android:id="@+id/wTabFavT"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="喜欢"
+                android:textColor="#6B7688"
+                android:textSize="9.5sp"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/wTabRec"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/w_tab_bg"
+            android:contentDescription="已播">
+
+            <ImageView
+                android:layout_width="17dp"
+                android:layout_height="17dp"
+                android:src="@drawable/ic_w_hist"
+                android:contentDescription="已播" />
+
+            <TextView
+                android:id="@+id/wTabRecT"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:text="已播"
+                android:textColor="#6B7688"
+                android:textSize="9.5sp"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ③ 内容区：歌词 / 四个面板叠在同一块地方，谁显示由 WidgetCore 决定 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="1dp">
+
+        <!-- 默认：随播放滚动的歌词（当前行 + 下一行预显） -->
+        <LinearLayout
+            android:id="@+id/wLrcBox"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/wLrc1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wLrc2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text=""
+                android:textColor="#B0B9CB"
+                android:textSize="13sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <!-- 输出面板：5 个设备芯片 + 音量步进 -->
+        <LinearLayout
+            android:id="@+id/wPanelOut"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="25dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/wDevBox"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/w_dev_box"
+                    android:textColor="#6B7688"
+                    android:textSize="9.5sp"
+                    android:background="@drawable/w_chip_n" />
+
+                <TextView
+                    android:id="@+id/wDevPhone"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginLeft="4dp"
+                    android:gravity="center"
+                    android:text="@string/w_dev_phone"
+                    android:textColor="#6B7688"
+                    android:textSize="9.5sp"
+                    android:background="@drawable/w_chip_n" />
+
+                <TextView
+                    android:id="@+id/wDevTv"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginLeft="4dp"
+                    android:gravity="center"
+                    android:text="@string/w_dev_tv"
+                    android:textColor="#6B7688"
+                    android:textSize="9.5sp"
+                    android:background="@drawable/w_chip_n" />
+
+                <TextView
+                    android:id="@+id/wDevPc"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginLeft="4dp"
+                    android:gravity="center"
+                    android:text="@string/w_dev_pc"
+                    android:textColor="#6B7688"
+                    android:textSize="9.5sp"
+                    android:background="@drawable/w_chip_n" />
+
+                <TextView
+                    android:id="@+id/wDevMulti"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginLeft="4dp"
+                    android:gravity="center"
+                    android:text="环绕"
+                    android:textColor="#6B7688"
+                    android:textSize="9.5sp"
+                    android:background="@drawable/w_chip_n" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="23dp"
+                android:layout_marginTop="3dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/w_vol_pill">
+
+                <TextView
+                    android:id="@+id/wVolDown"
+                    android:layout_width="40dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="−"
+                    android:textColor="#F2506E"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:background="@null"
+                    android:contentDescription="@string/w_vol_down" />
+
+                <TextView
+                    android:id="@+id/wVolVal"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="35%"
+                    android:textColor="#4A5568"
+                    android:textSize="10.5sp"
+                    android:includeFontPadding="false" />
+
+                <TextView
+                    android:id="@+id/wVolUp"
+                    android:layout_width="40dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="＋"
+                    android:textColor="#F2506E"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:background="@null"
+                    android:contentDescription="@string/w_vol_up" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 喜欢面板：最多三首，点一首就播 -->
+        <LinearLayout
+            android:id="@+id/wPanelFav"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/wFav1"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wFav2"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wFav3"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <!-- 已播面板：最近播放三首 -->
+        <LinearLayout
+            android:id="@+id/wPanelRec"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/wRec1"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wRec2"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wRec3"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+
+        <!-- 搜索面板：RemoteViews 塞不了输入框，这里放最近搜过的词 + 一个进 App 搜索的入口 -->
+        <LinearLayout
+            android:id="@+id/wPanelSch"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/wSch1"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wSch2"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text=""
+                android:textColor="#42506A"
+                android:textSize="10.5sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false" />
+
+            <TextView
+                android:id="@+id/wSchGo"
+                android:layout_width="match_parent"
+                android:layout_height="17dp"
+                android:gravity="center_vertical"
+                android:text="在 App 里搜索  ›"
+                android:textColor="#F2506E"
+                android:textSize="10.5sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:includeFontPadding="false" />
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

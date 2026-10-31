@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件功能键：输出设备（投屏式图标） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#2A3444"
+        android:pathData="M2.2,4.6h19.6a1.2,1.2 0 0,1 1.2,1.2v8.6a1.2,1.2 0 0,1 -1.2,1.2h-5.4v-2h4.6v-7H3.2v7h4.6v2H2.2a1.2,1.2 0 0,1 -1.2,-1.2V5.8a1.2,1.2 0 0,1 1.2,-1.2z" />
+    <path
+        android:fillColor="#2A3444"
+        android:pathData="M8.6,21.2v-2h6.8v2z" />
+    <path
+        android:fillColor="#2A3444"
+        android:pathData="M4.4,19.4a1.1,1.1 0 1,1 2.2,0a1.1,1.1 0 1,1 -2.2,0z" />
+    <path
+        android:fillColor="#2A3444"
+        android:pathData="M9.2,19.4a3.7,3.7 0 0,0 -3.7,-3.7v-2a5.7,5.7 0 0,1 5.7,5.7z" />
+</vector>

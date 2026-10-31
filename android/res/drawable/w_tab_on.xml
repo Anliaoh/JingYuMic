@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件功能键底：当前展开的那一个，淡玫红圆角 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#14F2506E" />
+    <corners android:radius="10dp" />
+</shape>

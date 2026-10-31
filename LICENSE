@@ -1,0 +1,40 @@
+MIT License
+
+Copyright (c) 2026 鲸屿Mic contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## 免责声明 / Disclaimer
+
+1. 本软件为**个人作品**，按现状（as-is）分享。作者**不承诺持续维护**，不保证及时回复
+   任何反馈，不接受功能请求。
+2. 作者不对软件的正确性、稳定性、适用性作任何担保。使用本软件造成的任何直接或间接损失
+   （包括但不限于数据丢失、设备异常、账号问题），由使用者自行承担。
+3. 本软件**不附带任何内容**（音乐、歌词、封面等）。使用者通过本软件访问的一切内容，
+   其版权与合法性由使用者自行负责；请在遵守当地法律与相关服务条款的前提下使用。
+4. 本仓库不包含任何第三方软件的源码或二进制分发包，也不包含任何账号凭据、密钥或证书。
+   仓库中出现的第三方服务地址仅用于说明技术实现，不构成推荐、授权或背书。
+5. 本项目与任何硬件厂商、音乐平台、软件项目**均无隶属或合作关系**。
+6. 若权利人认为本仓库内容侵犯其权益，请通过仓库主页公开的联系方式告知，作者将在合理期限内
+   核实并处理（包括删除相关内容）。
+7. **上述 MIT 许可仅适用于源代码。** `android/res/` 与 `pc-client/` 下的**图标与图像素材**
+   （含 App 角色图标、PC 图标、小组件位图）不在 MIT 授权范围内，其来源与使用限制见
+   `README.md` 的「图标与素材来源」一节。

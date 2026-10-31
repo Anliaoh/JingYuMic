@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 平板 sw600dp · 4x1 长条加大版（浅色 · 对齐 MIUI 桌面卡片） -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/wRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingLeft="15dp"
+    android:paddingRight="9dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:background="@drawable/widget_bg_bar">
+
+    <ImageView
+        android:id="@+id/wCover"
+        android:layout_width="54dp"
+        android:layout_height="54dp"
+        android:scaleType="centerCrop"
+        android:contentDescription="@string/app_name" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginLeft="13dp"
+        android:layout_marginRight="6dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/wTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="#16202F"
+            android:textSize="16.5sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/wArtist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text="@string/w_idle_sub"
+            android:textColor="#6B7688"
+            android:textSize="12.5sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:includeFontPadding="false" />
+
+        <TextView
+            android:id="@+id/wLrc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text=""
+            android:textColor="#8B96A8"
+            android:textSize="12.5sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:includeFontPadding="false" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/wPrev"
+        android:layout_width="38dp"
+        android:layout_height="38dp"
+        android:padding="7dp"
+        android:background="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_w_prev_d"
+        android:contentDescription="@string/w_prev" />
+
+    <ImageButton
+        android:id="@+id/wPlay"
+        android:layout_width="46dp"
+        android:layout_height="46dp"
+        android:padding="2dp"
+        android:background="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_w_play"
+        android:contentDescription="@string/w_play" />
+
+    <ImageButton
+        android:id="@+id/wNext"
+        android:layout_width="38dp"
+        android:layout_height="38dp"
+        android:padding="7dp"
+        android:background="@null"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_w_next_d"
+        android:contentDescription="@string/w_next" />
+</LinearLayout>

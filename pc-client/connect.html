@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><title>鲸屿Mic · 连接平板</title>
+<style>
+:root{--panel:#171B22;--line:rgba(255,255,255,.08);--txt:#E8ECF4;--sub:#8A93A6;--rose:#FF5F7A;--org:#FF8A5C}
+*{margin:0;padding:0;box-sizing:border-box;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+body{height:100vh;display:flex;align-items:center;justify-content:center;
+background:radial-gradient(1200px 700px at 20% -10%,#1B2233 0%,#0D1017 55%);color:var(--txt)}
+.card{width:440px;background:var(--panel);border:1px solid var(--line);border-radius:20px;
+padding:38px 34px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+.logo{font-size:30px;font-weight:800;letter-spacing:1px;margin-bottom:6px;
+background:linear-gradient(120deg,var(--rose),var(--org));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.tip{color:var(--sub);font-size:13px;line-height:1.7;margin-bottom:20px}
+.st{font-size:13px;margin-bottom:14px;color:var(--sub);min-height:18px}
+.ok{color:#5AD18C}.bad{color:#FF6B81}
+input{width:100%;height:44px;border-radius:12px;border:1px solid var(--line);background:#0F131B;
+color:var(--txt);padding:0 14px;font-size:15px;outline:none;margin-bottom:14px}
+input:focus{border-color:rgba(255,95,122,.55)}
+button{width:100%;height:46px;border:0;border-radius:12px;cursor:pointer;font-size:15px;font-weight:700;
+color:#fff;background:linear-gradient(120deg,var(--rose),var(--org))}
+button:hover{filter:brightness(1.08)}
+.scan{background:none;border:1px solid var(--line);color:var(--sub);font-weight:500;margin-top:10px}
+.winbar{position:fixed;top:0;left:0;right:0;height:34px;display:flex;align-items:center;
+justify-content:flex-end;gap:2px;-webkit-app-region:drag;user-select:none;padding-right:8px}
+.winbar button{-webkit-app-region:no-drag;width:36px;height:26px;border:0;border-radius:8px;
+background:none;color:var(--sub);display:grid;place-items:center;cursor:pointer}
+.winbar button svg{width:14px;height:14px}
+.winbar button:hover{background:rgba(255,255,255,.08);color:var(--txt)}
+.winbar button.close:hover{background:#E5484D;color:#fff}
+</style></head>
+<body>
+<div class="winbar">
+  <button onclick="ipcRenderer.send('win-min')" title="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
+  <button class="close" onclick="ipcRenderer.send('win-close')" title="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
+</div>
+<div class="card">
+<div class="logo">鲸屿Mic</div>
+<div class="tip">没有找到平板上的服务。请确认平板上鲸屿Mic 服务正在运行，电脑与平板在同一网络，然后输入平板 IP（平板 Termux 里运行 ifconfig 可查看 wlan0 地址）。</div>
+<div class="st" id="st"></div>
+<input id="ip" placeholder="例如 192.168.1.100" spellcheck="false">
+<button onclick="doConnect()">连 接</button>
+<button class="scan" onclick="doScan()">重新扫描局域网</button>
+</div>
+<script>
+const { ipcRenderer } = require("electron");
+function st(h){document.getElementById("st").innerHTML=h}
+async function doConnect(){
+  const ip=document.getElementById("ip").value.trim();
+  if(!ip){st('<span class="bad">请输入 IP</span>');return}
+  st("正在连接 "+ip+" …");
+  const ok=await ipcRenderer.invoke("probe", ip);
+  if(ok){ st('<span class="ok">连接成功，正在打开…</span>'); ipcRenderer.send("connect", ip); }
+  else st('<span class="bad">连不上，检查 IP 和网络</span>');
+}
+async function doScan(){
+  st("正在扫描局域网…");
+  const ip=await ipcRenderer.invoke("discover");
+  if(ip){ document.getElementById("ip").value=ip; st('<span class="ok">找到平板 '+ip+'，正在打开…</span>'); ipcRenderer.send("connect", ip); }
+  else st('<span class="bad">未找到，请手动填 IP</span>');
+}
+ipcRenderer.on("found", (e, ip) => {
+  if(ip){ document.getElementById("ip").value=ip; st('<span class="ok">找到平板 '+ip+'，正在打开…</span>'); ipcRenderer.send("connect", ip); }
+});
+</script></body></html>

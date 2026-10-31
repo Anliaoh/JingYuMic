@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>鲸屿Mic 桌面歌词</title>
+<style>
+  html, body { margin:0; height:100%; background:transparent; overflow:hidden;
+    font-family:"Microsoft YaHei","PingFang SC",sans-serif; user-select:none; cursor:default; }
+  /* 整窗不再有任何 -webkit-app-region：那种「拖动区」会吞掉页面的 mousemove，
+     指针停在字上时热区判定就更新不了，穿透状态退不回来，回头又开始挡鼠标。
+     这里靠脚本自己算坐标交给主进程搬运窗口（dlyr-drag-begin/end）。 */
+  #bar{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:3px; }
+  .line{ max-width:96%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    line-height:1.25; cursor:move; }
+  /* 白字 + 黑描边（多层阴影够亮，任何壁纸上都看得清） */
+  #l1{ font-size:34px; font-weight:800; letter-spacing:1px; color:#fff;
+    text-shadow:0 0 8px rgba(0,0,0,.9), 2px 2px 0 rgba(0,0,0,.75), -2px 2px 0 rgba(0,0,0,.75),
+      2px -2px 0 rgba(0,0,0,.75), -2px -2px 0 rgba(0,0,0,.75), 0 3px 8px rgba(0,0,0,.6); }
+  #l2{ font-size:17px; font-weight:650; color:rgba(255,255,255,.92);
+    text-shadow:0 0 6px rgba(0,0,0,.9), 1px 1px 0 rgba(0,0,0,.7), -1px 1px 0 rgba(0,0,0,.7),
+      1px -1px 0 rgba(0,0,0,.7), -1px -1px 0 rgba(0,0,0,.7); }
+  #l2:empty{ display:none; }
+  #l1:empty::after{ content:"—"; opacity:.45; }   /* 没词时留个淡淡的把手，能拖能关 */
+  body.dim .line{ opacity:.4; }
+  /* ✕ 常驻但很淡：鼠标移上去才亮。它自己有热区，穿透状态下也点得到 */
+  #x{ position:absolute; top:2px; right:6px;
+    width:20px; height:20px; border:0; border-radius:50%; cursor:pointer;
+    background:rgba(0,0,0,.30); color:rgba(255,255,255,.62); font-size:11px;
+    line-height:20px; padding:0; opacity:.30; transition:.2s; }
+  #x:hover{ opacity:1; color:#fff; background:rgba(0,0,0,.55); }
+  #tip{ position:absolute; top:4px; left:10px; font-size:10px; color:rgba(255,255,255,.6);
+    text-shadow:0 1px 2px rgba(0,0,0,.8); opacity:0; transition:.3s; pointer-events:none; }
+  body.hot #tip{ opacity:1; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <span id="tip">拖歌词挪位置 · ✕ 关闭</span>
+    <div class="line" id="l1"></div>
+    <div class="line" id="l2"></div>
+    <button id="x" title="关闭桌面歌词">✕</button>
+  </div>
+  <script>
+    const { ipcRenderer } = require("electron");
+    const l1 = document.getElementById("l1"), l2 = document.getElementById("l2");
+    const bx = document.getElementById("x");
+
+    ipcRenderer.on("dlyr-line", (e, p) => {
+      p = p || {};
+      l1.textContent = p.l1 || "";
+      l2.textContent = p.l2 || "";
+      document.body.classList.toggle("dim", !!(p.l1 && !p.playing));   // 暂停时整行变暗
+    });
+    bx.onclick = () => ipcRenderer.send("dlyr-close");
+
+    /* ---- 鼠标穿透 ----
+       主进程把这个窗口设成「忽略鼠标事件 + 转发 mousemove」：
+       空白区永不挡下面程序的点击（「桌面歌词不要妨碍鼠标」就是这条）；
+       鼠标压到歌词 / ✕ 上时才临时收回穿透，拖动和关闭才用得了。
+       热区外扩 12px，手抖不会一进一出地闪。 */
+    var pt = { x: -1, y: -1 }, hot = false, dragging = false;
+    function inside(el, pad) {
+      if (!el) return false;
+      var r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      return pt.x >= r.left - pad && pt.x <= r.right + pad &&
+             pt.y >= r.top - pad && pt.y <= r.bottom + pad;
+    }
+    function refresh() {
+      var h = inside(l1, 12) || inside(l2, 12) || inside(bx, 10);
+      document.body.classList.toggle("hot", h);
+      if (h !== hot) { hot = h; try { ipcRenderer.send("dlyr-hit", h); } catch (err) {} }
+    }
+    window.addEventListener("mousemove", function (e) {
+      pt.x = e.clientX; pt.y = e.clientY; refresh();
+    }, true);
+    document.addEventListener("mouseleave", function () {
+      if (dragging) return;
+      pt.x = -1; pt.y = -1; refresh();
+    });
+    window.addEventListener("blur", function () {
+      if (dragging) return;
+      pt.x = -1; pt.y = -1; refresh();
+    });
+
+    /* ---- 拖动：自己算，别用 app-region ---- */
+    var dragOn = false;
+    function onDown(e) {
+      if (e.button !== 0) return;
+      if (e.target === bx) return;              // ✕ 上按下去是要关窗，不是拖
+      dragOn = true; dragging = true;
+      try { ipcRenderer.send("dlyr-drag-begin"); } catch (err) {}
+      e.preventDefault();
+    }
+    function onUp() {
+      if (!dragOn) return;
+      dragOn = false; dragging = false;
+      try { ipcRenderer.send("dlyr-drag-end"); } catch (err) {}
+    }
+    l1.addEventListener("mousedown", onDown);
+    l2.addEventListener("mousedown", onDown);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
+
+    ipcRenderer.send("dlyr-ready");
+  </script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>鲸屿Mic · 连接设置</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;padding:26px 18px 22px;background:#0c0f14;color:#e8eef7;
+    font:15px/1.65 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-text-size-adjust:100%;
+  }
+  .brand{text-align:center;font-size:16px;letter-spacing:3px;color:#8b98ab;margin:10px 0 20px}
+  .brand b{color:#e8eef7;font-weight:600}
+  .card{
+    background:#161c25;border-radius:16px;padding:20px 18px;
+    box-shadow:0 10px 34px rgba(0,0,0,.35);
+  }
+  .card h2{margin:0 0 8px;font-size:17px;font-weight:600}
+  .card p{margin:0 0 16px;font-size:13px;color:#8b98ab}
+  .row{display:flex;gap:8px}
+  input{
+    flex:1;min-width:0;height:42px;border-radius:10px;border:1px solid #26303d;
+    background:#0f141c;color:#e8eef7;padding:0 12px;font-size:13px;outline:none;
+  }
+  input:focus{border-color:#f2506e}
+  #go{
+    height:42px;padding:0 18px;border:0;border-radius:10px;background:#f2506e;
+    color:#fff;font-size:14px;font-weight:600;flex:0 0 auto;
+  }
+  #go:active{opacity:.85}
+  .acts{margin-top:12px}
+  .ghost{
+    width:100%;height:40px;border-radius:10px;border:1px solid #2a3441;
+    background:#1b222c;color:#cfd8e3;font-size:13px;
+  }
+  .ghost:active{background:#222b36}
+  .msg{margin-top:14px;font-size:12.5px;color:#8b98ab;min-height:19px;word-break:break-all}
+  .msg.ok{color:#4ec97b}
+  .msg.err{color:#f2506e}
+  .foot{margin-top:18px;text-align:center;font-size:12px;color:#59657a}
+  .spin{
+    display:inline-block;width:11px;height:11px;margin-right:6px;vertical-align:-1px;
+    border:2px solid #59657a;border-top-color:transparent;border-radius:50%;
+    animation:sp .7s linear infinite;
+  }
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="brand"><b>鲸屿Mic</b> · 连接设置</div>
+
+<div class="card">
+  <h2>还没连上遥控服务</h2>
+  <p>平板上的服务暂时没有响应。确认它已经启动，或者手动填写地址。</p>
+
+  <div class="row">
+    <input id="addr" type="text" value="__HOST__" spellcheck="false"
+           autocapitalize="none" autocorrect="off" autocomplete="off">
+    <button id="go">连接</button>
+  </div>
+
+  <div class="acts">
+    <button id="scan" class="ghost">重新扫描局域网</button>
+  </div>
+
+  <div id="msg" class="msg">__MSG__</div>
+</div>
+
+<div class="foot">连上之后地址会被记住，下次打开自动连接</div>
+
+<script>
+var $ = function (id) { return document.getElementById(id); };
+
+/* 中文输入法会把 : / . 打成全角（：／ 。），地址必须先掰回半角 */
+function norm(s) {
+  return (s || "")
+    .replace(/[\uFF01-\uFF5E]/g, function (c) {
+      return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+    })
+    .replace(/\u3002/g, ".")
+    .replace(/\u3000/g, " ")
+    .replace(/\s+/g, "");
+}
+
+function setMsg(t, kind) {
+  var m = $("msg");
+  m.className = "msg" + (kind ? " " + kind : "");
+  m.innerHTML = t || "";
+}
+window.__setupMsg = setMsg;
+
+function doConnect() {
+  var v = norm($("addr").value);
+  if (!v) { setMsg("请先填写服务地址", "err"); return; }
+  if (!/^https?:\/\//i.test(v)) v = "http://" + v;
+  if (!/:\d+$/.test(v)) v = v + ":58090";
+  $("addr").value = v;
+  setMsg('<span class="spin"></span>正在连接 ' + v + " …");
+  try { window.AppBridge.connectTo(v); }
+  catch (e) { setMsg("调不起原生连接：" + e, "err"); }
+}
+
+function doScan() {
+  setMsg('<span class="spin"></span>正在扫描局域网…');
+  try { window.AppBridge.scanNow(); }
+  catch (e) { setMsg("调不起扫描：" + e, "err"); }
+}
+
+$("go").onclick = doConnect;
+$("scan").onclick = doScan;
+$("addr").addEventListener("keydown", function (e) {
+  if (e.key === "Enter" || e.keyCode === 13) { e.preventDefault(); doConnect(); }
+});
+</script>
+
+</body>
+</html>

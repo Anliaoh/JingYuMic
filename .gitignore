@@ -1,0 +1,63 @@
+# ---- 凭据与私钥（绝对不能进仓库）----
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+id_rsa
+id_ed25519
+id_ed25519.pub
+auth.json
+config.json
+setting.json
+.mi.token*
+.env
+.env.*
+*cookie*
+*credential*
+*secret*
+
+# ---- 本机配置 ----
+*.local.json
+jy_rec_sources.json
+*.ini.local
+
+# ---- 构建产物 ----
+build/
+dist/
+out/
+*.apk
+*.aab
+*.idsig
+*.exe
+*.dll
+*.dylib
+*.so
+*.asar
+res.zip
+
+# ---- 依赖 ----
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- 日志与临时文件 ----
+*.log
+logs/
+*.bak
+*.bak_*
+*.orig
+*.rej
+*~
+q_*.html
+
+# ---- 编辑器与系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">鲸屿Mic</string>
+
+    <!-- 桌面小组件 -->
+    <string name="w_idle_sub">点这里开始播放</string>
+    <string name="w_prev">上一首</string>
+    <string name="w_next">下一首</string>
+    <string name="w_play">播放 / 暂停</string>
+    <string name="w_pause">暂停</string>
+    <string name="w_dev_box">音箱</string>
+    <string name="w_dev_phone">手机</string>
+    <string name="w_dev_tv">电视</string>
+    <string name="w_dev_pc">电脑</string>
+    <string name="w_vol_down">音量减</string>
+    <string name="w_vol_up">音量加</string>
+    <string name="w_bar_desc">鲸屿Mic 播放条：封面、歌名，直接上一首 / 播放 / 下一首</string>
+    <string name="w_card_desc">鲸屿Mic 播放卡片：大封面、进度条、播放控制</string>
+</resources>
