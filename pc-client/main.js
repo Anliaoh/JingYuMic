@@ -1,5 +1,5 @@
 // 鲸屿Mic PC 客户端 —— Electron 主进程
-// 启动后自动扫描局域网内的平板服务(58090)，加载 QQ 音乐风格界面；
+// 启动后自动扫描局域网内的平板服务(58090)，加载播放界面；
 // 找不到时显示连接页，可手动填 IP。
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require("electron");
 const { execFile } = require("child_process");
@@ -215,7 +215,7 @@ function createWindow() {
     title: "鲸屿Mic",
     backgroundColor: "#0D1017",
     autoHideMenuBar: true,
-    frame: false,          // QQ 音乐式无边框：窗口按钮嵌在页面右上角，拖动靠 -webkit-app-region
+    frame: false,          // 无边框：窗口按钮嵌在页面右上角，拖动靠 -webkit-app-region
     icon: path.join(__dirname, "icon.ico"),
     webPreferences: {
       nodeIntegration: true,
@@ -312,7 +312,7 @@ let dlyrWin = null;
 let dlyrDrag = null, dlyrDragTimer = null;   // 手动拖窗（见 dlyr-drag-begin）
 const trayState = { name: "", playing: false, dlyrOn: false, liked: false, mode: "", vol: null };   // 托盘/面板要显示的状态
 
-/* 托盘弹出面板（左键点托盘图标）：圆环三键 + ♡歌名 + 音量条，布局照 QQ 音乐 */
+/* 托盘弹出面板（左键点托盘图标）：圆环三键 + ♡歌名 + 音量条 */
 let trayPanel = null;
 function pushTrayState() {
   try { if (trayPanel && !trayPanel.isDestroyed()) trayPanel.webContents.send("tray-state", {
@@ -419,7 +419,7 @@ function toggleDlyr(force) {
   pushTrayState();          // 托盘面板菜单里的「桌面歌词」开关字样跟着换
 }
 
-/* ---------------- 托盘（左键开关主窗口；右键弹 QQ 音乐式控制面板） ---------------- */
+/* ---------------- 托盘（左键开关主窗口；右键弹控制面板） ---------------- */
 function showWin() {
   if (!win || win.isDestroyed()) {
     createWindow();
@@ -432,7 +432,7 @@ function showWin() {
 }
 
 function rebuildTray() {
-  // 原生右键菜单已停用：右键改弹 tray.html 控制面板（QQ 音乐式）。
+  // 原生右键菜单已停用：右键改弹 tray.html 控制面板。
   // 保留函数本身——toggleDlyr / tray-now 等处还在调它，做成空操作即可。
 }
 
@@ -451,7 +451,7 @@ function createTray() {
       showWin();
     }
   });
-  // 右键：弹/收 QQ 音乐式控制面板
+  // 右键：弹/收控制面板
   tray.on("right-click", () => toggleTrayPanel());
   tray.on("double-click", showWin);
 }

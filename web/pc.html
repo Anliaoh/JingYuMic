@@ -262,7 +262,7 @@ nav .navitem.on svg{color:var(--q)}
 .topbar{
   flex:0 0 auto;display:flex;align-items:center;gap:10px;
   padding:12px 10px 12px 24px;height:58px;
-  -webkit-app-region:drag;             /* QQ 音乐式：整条顶栏都能拖动窗口 */
+  -webkit-app-region:drag;             /* 无边框窗口：整条顶栏都能拖动 */
   user-select:none;
 }
 /* 拖动区里的交互件要摘出来，否则点不动 */
@@ -513,7 +513,7 @@ body.maxed .winbtns .icoRestore{display:block}
 }
 .sechead em{font-style:normal;font-size:11px;color:var(--dim);margin-left:2px;font-weight:400}
 .empty{padding:70px 20px;text-align:center;color:var(--dim);font-size:12.5px;line-height:2}
-/* 每日推荐 · 头图（QQ 音乐绿主题：纯绿渐变，去掉原先的蓝青尾色） */
+/* 每日推荐 · 头图（纯绿渐变，去掉原先的蓝青尾色） */
 .rechero{
   margin:10px calc(24px + var(--sbw)) 0 24px;border-radius:16px;padding:18px 22px;display:flex;align-items:center;gap:18px;color:#fff;
   background:linear-gradient(120deg,#3AD17F 0%,#1FB36C 58%,#16A85F 100%);position:relative;overflow:hidden;
@@ -531,7 +531,7 @@ body.maxed .winbtns .icoRestore{display:block}
 .rhplay svg{width:14px;height:14px}
 .rhmore{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.16);color:#fff;font-size:12.5px;padding:9px 15px;border-radius:999px;transition:.15s}
 .rhmore:hover{background:rgba(255,255,255,.28)}
-/* 每日推荐 · 主题歌单卡（QQ 音乐乐馆风：横滑方块封面） */
+/* 每日推荐 · 主题歌单卡（横滑方块封面） */
 .recpl-sec{margin:0;display:flex;flex-direction:column;min-height:0}
 .recpl-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
 .recpl-head b{font-size:16px;font-weight:800}
@@ -6100,10 +6100,10 @@ function closeThemeView(){
 }
 /* 主题卡的封面候选地址（按优先顺序给最多 4 个，前一个失败就试下一个）。
    歌单是「按主题聚出来的一组歌」，本身没有封面，所以拿里面一首歌的封面当代表
-   —— QQ 音乐的自动歌单也是这么做的。
+   —— 自动歌单通常也是这么做的。
    实测：主题歌单里往往本地歌占多数、在线歌只有几首，而源站某首会超时取不到，
    所以两侧都要收候选，不能只押一种。 */
-/* 卡面第二行：优先显示服务端给的副标题（QQ 音乐那种「跑步音乐：运动必备活力节奏」
+/* 卡面第二行：优先显示服务端给的副标题（「跑步音乐：运动必备活力节奏」这类
    的两段式），没给就退回「N 首」 */
 function cardSub(p){
   if(p && p.desc) return p.desc;

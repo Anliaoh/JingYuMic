@@ -397,7 +397,7 @@ def accent_from_cover(path, fallback="#E8546A"):
         r, g, b = [int(t / wsum) for t in tot]
         # 封面五花八门：灰封面取出来的颜色太淡，高亮行会看不出来。
         # 所以只保留它的「色相」，饱和度提上去、亮度压进可读区间，
-        # 保证任何封面都能得到一个像 QQ 音乐那种能当强调色的颜色。
+        # 保证任何封面都能得到一个能当强调色的颜色。
         import colorsys
         hh, ll, ss = colorsys.rgb_to_hls(r / 255.0, g / 255.0, b / 255.0)
         if ss < 0.08:                      # 几乎是灰度封面：用默认粉

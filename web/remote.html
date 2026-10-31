@@ -192,7 +192,7 @@
     font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;
     letter-spacing:.6px;margin-bottom:16px;
   }
-  /* QQ 音乐式进度行：时间夹住进度条同一行 */
+  /* 进度行：时间夹住进度条同一行 */
   .prow{display:flex;align-items:center;gap:10px;margin-bottom:16px}
   .prow .bar{flex:1;margin-bottom:0}
   .prow .pcur,.prow .pdur{
@@ -342,7 +342,7 @@
   }
   body.light .vpcaret{border-color:rgba(16,24,40,.08)}
   .vpop.below .vpcaret{bottom:auto;top:-6px;transform:rotate(225deg)}
-  /* QQ 音乐式底部图标行：歌词 / 喜欢 */
+  /* 底部图标行：歌词 / 喜欢 */
   .tbtn{
     border:0;background:transparent;color:var(--sub);cursor:pointer;font-family:inherit;
     display:flex;flex-direction:column;align-items:center;gap:3px;flex:0 0 auto;
@@ -1668,7 +1668,7 @@ body.pad .settwocol{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-it
     box-shadow:0 14px 36px -16px rgba(20,30,50,.32),inset 0 0 0 1px rgba(16,24,40,.06);
     cursor:pointer;transition:box-shadow .2s,transform .2s;
   }
-  /* 迷你条里的设备胶囊 / 播放模式 / 音量（QQ 音乐底栏排法） */
+  /* 迷你条里的设备胶囊 / 播放模式 / 音量（底栏排法） */
   .mdev{
     display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;height:32px;padding:0 10px;
     border-radius:16px;border:1px solid rgba(16,24,40,.1);background:rgba(16,24,40,.035);
@@ -6947,7 +6947,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     box.scrollTop = keep.top || 0;
   }
   /* 主题卡的封面候选地址（最多 4 个，前一个失败试下一个）。
-     歌单本身没有封面，拿里面一首歌的封面当代表（QQ 音乐自动歌单同做法）。
+     歌单本身没有封面，拿里面一首歌的封面当代表（自动歌单通用做法）。
      主题歌单里往往本地歌占多数，而源站某首会超时取不到，所以两侧都收候选。 */
   function themeCoverUrls(p){
     var ss = (p && p.songs) || [], out = [], i, s, u;
@@ -10546,7 +10546,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       $("miniMeta").onclick = openLyric;
       $("miniCover").onclick = openLyric;
       $("miniPlay").onclick = function(ev){ ev.stopPropagation(); $("btnPlay").click(); };
-      // 迷你条：上一首 / 下一首 / 播放模式 / 音量（QQ 音乐底栏那套）
+      // 迷你条：上一首 / 下一首 / 播放模式 / 音量（底栏那套）
       if($("miniPrev")) $("miniPrev").onclick = function(ev){ ev.stopPropagation(); $("btnPrev").click(); };
       if($("miniNext")) $("miniNext").onclick = function(ev){ ev.stopPropagation(); $("btnNext").click(); };
       if($("miniMode")) $("miniMode").onclick = function(ev){ ev.stopPropagation(); $("btnMode").click(); };

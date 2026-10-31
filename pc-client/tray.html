@@ -1,0 +1,149 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* 托盘弹出面板：白底圆角小卡——
+     圆环三键（上一首/播放/下一首）→ ♡ + 歌名 + 随机 → 音量条 */
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;user-select:none;cursor:default}
+  html,body{background:transparent;overflow:hidden;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+  #card{
+    width:300px;padding:14px 16px 12px;background:#fff;border-radius:14px;
+    box-shadow:0 10px 34px -8px rgba(15,22,34,.32),0 0 0 1px rgba(15,22,34,.05);
+  }
+  /* ---- 圆环三键 ---- */
+  .ctrl{display:flex;align-items:center;justify-content:center;gap:18px;height:50px}
+  .ctrl button{
+    width:38px;height:38px;border-radius:19px;background:#fff;border:2px solid #4A505C;
+    color:#4A505C;display:flex;align-items:center;justify-content:center;
+    transition:transform .1s,background .14s,border-color .14s;outline:none;
+  }
+  .ctrl button svg{width:16px;height:16px;pointer-events:none}
+  .ctrl button:active{transform:scale(.92)}
+  .ctrl button:hover{background:#F2F4F7}
+  .ctrl button.big{width:48px;height:48px;border-radius:24px}
+  .ctrl button.big svg{width:20px;height:20px}
+  /* ---- ♡ + 歌名 + 随机 ---- */
+  .meta{display:flex;align-items:center;gap:8px;height:30px;margin-top:9px;padding:0 2px}
+  .meta button{
+    width:26px;height:26px;flex:0 0 auto;border:0;background:none;color:#8A93A1;
+    display:flex;align-items:center;justify-content:center;border-radius:13px;
+    transition:color .14s;outline:none;
+  }
+  .meta button svg{width:15px;height:15px;pointer-events:none}
+  .meta button:active{transform:scale(.9)}
+  .meta button.on{color:#E5484D}
+  #name{
+    flex:1 1 auto;min-width:0;font-size:13px;font-weight:600;color:#333A45;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;
+  }
+  /* ---- 音量条 ---- */
+  .volr{display:flex;align-items:center;gap:9px;height:30px;margin-top:8px;padding:0 2px}
+  .volr .spk{width:15px;height:15px;color:#4A505C;flex:0 0 auto}
+  #vol{
+    flex:1 1 auto;height:4px;-webkit-appearance:none;appearance:none;border-radius:2px;
+    background:linear-gradient(to right,#3F4550 0%,#3F4550 35%,#E1E5EB 35%,#E1E5EB 100%);
+    outline:none;cursor:pointer;
+  }
+  #vol::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:12px;height:12px;border-radius:6px;
+    background:#3F4550;border:0;cursor:pointer;
+  }
+  /* ---- 菜单区（分隔线 + 图标行） ---- */
+  .menu{margin-top:9px;border-top:1px solid #EEF0F3;padding-top:5px}
+  .msep{height:1px;background:#EEF0F3;margin:5px 0}
+  .mrow{
+    display:flex;align-items:center;gap:10px;height:32px;padding:0 4px;
+    color:#4A505C;font-size:12.5px;font-weight:600;border-radius:7px;
+    white-space:nowrap;
+  }
+  .mrow:hover{background:#F3F4F7}
+  .mrow:active{background:#ECEEF2}
+  .mrow .mic{
+    width:20px;height:20px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+    border:1.4px solid currentColor;border-radius:5px;font-size:10.5px;font-weight:800;
+  }
+  .mrow svg{width:15px;height:15px;flex:0 0 auto}
+  .mrow.quit{color:#E5484D}
+</style>
+</head>
+<body>
+<div id="card">
+  <div class="ctrl">
+    <button id="bPrev" title="上一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 6h2.2v12H7zM20 6.4v11.2L10.4 12z"/></svg></button>
+    <button id="bPlay" class="big" title="播放 / 暂停"><svg id="playIco" viewBox="0 0 24 24" fill="currentColor"><path d="M9 6.2v11.6l9.2-5.8z"/></svg></button>
+    <button id="bNext" title="下一首"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.8 6H17v12h-2.2zM4 6.4 13.6 12 4 17.6z"/></svg></button>
+  </div>
+  <div class="meta">
+    <button id="bLike" title="喜欢这首歌"><svg id="likeIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 20s-7.3-4.6-9.1-9A4.9 4.9 0 0112 6.2 4.9 4.9 0 0121.1 11c-1.8 4.4-9.1 9-9.1 9z"/></svg></button>
+    <div id="name">未在播放</div>
+    <button id="bMode" title="播放模式"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3.5h4.5V8"/><path d="M3.5 20.5 20.5 3.5"/><path d="M20.5 16v4.5H16"/><path d="M14.5 14.5l6 6"/><path d="M3.5 3.5 9 9"/></svg></button>
+  </div>
+  <div class="volr">
+    <svg class="spk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M11 5 7 9H4v6h3l4 4z"/><path d="M15.5 8.8a4.6 4.6 0 010 6.4" stroke-linecap="round"/></svg>
+    <input type="range" id="vol" min="0" max="100" value="35">
+  </div>
+  <div class="menu">
+    <div class="mrow" id="mDlyr">
+      <span class="mic">词</span><span id="dlyrTx">打开桌面歌词</span>
+    </div>
+    <div class="msep"></div>
+    <div class="mrow" id="mSet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.03 1.56V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.11-1.56 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.56-1.03H3a2 2 0 110-4h.09a1.7 1.7 0 001.56-1.11 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34h.08a1.7 1.7 0 001.03-1.56V3a2 2 0 114 0v.09a1.7 1.7 0 001.03 1.56 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87v.08a1.7 1.7 0 001.56 1.03H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.56 1.03z"/></svg>
+      <span>设置</span>
+    </div>
+    <div class="msep"></div>
+    <div class="mrow" id="mRescan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M20.5 12a8.5 8.5 0 10-2.6 6.1"/><path d="M20.5 5.5V12H14" stroke-linejoin="round"/></svg>
+      <span>重新扫描平板</span>
+    </div>
+    <div class="msep"></div>
+    <div class="mrow quit" id="mQuit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.6v5.4"/><circle cx="12" cy="16.4" r="1" fill="currentColor" stroke="none"/></svg>
+      <span>退出鲸屿Mic</span>
+    </div>
+  </div>
+</div>
+<script>
+const { ipcRenderer } = require("electron");
+const $ = (id) => document.getElementById(id);
+const PLAY = '<path d="M9 6.2v11.6l9.2-5.8z"/>';
+const PAUSE = '<path d="M8 6h3.1v12H8zM13.4 6h3.1v12h-3.1z"/>';
+function fill(v){
+  v = Math.max(0, Math.min(100, v || 0));
+  $("vol").style.background =
+    "linear-gradient(to right,#3F4550 0%,#3F4550 " + v + "%,#E1E5EB " + v + "%,#E1E5EB 100%)";
+}
+function update(p){
+  p = p || {};
+  $("playIco").innerHTML = p.playing ? PAUSE : PLAY;
+  $("bPlay").title = p.playing ? "暂停" : "播放";
+  $("name").textContent = p.name || "未在播放";
+  $("name").title = p.name || "";
+  $("bLike").classList.toggle("on", !!p.liked);
+  $("likeIco").setAttribute("fill", p.liked ? "currentColor" : "none");
+  $("dlyrTx").textContent = p.dlyrOn ? "关闭桌面歌词" : "打开桌面歌词";
+  if(typeof p.vol === "number" && document.activeElement !== $("vol")){
+    $("vol").value = p.vol;
+  }
+  fill($("vol").value);
+}
+ipcRenderer.on("tray-state", (e, p) => update(p));
+ipcRenderer.send("tray-panel-ready");
+$("bPrev").onclick = () => ipcRenderer.send("panel-cmd", "prev");
+$("bNext").onclick = () => ipcRenderer.send("panel-cmd", "next");
+$("bPlay").onclick = () => ipcRenderer.send("panel-cmd", "play");
+$("bLike").onclick = () => ipcRenderer.send("panel-cmd", "like");
+$("bMode").onclick = () => ipcRenderer.send("panel-cmd", "mode");
+$("mDlyr").onclick = () => ipcRenderer.send("panel-cmd", "dlyr");
+$("mSet").onclick = () => ipcRenderer.send("panel-cmd", "settings");
+$("mRescan").onclick = () => ipcRenderer.send("panel-cmd", "rescan");
+$("mQuit").onclick = () => ipcRenderer.send("panel-cmd", "quit");
+$("vol").addEventListener("input", function(){ fill(this.value); });
+$("vol").addEventListener("change", function(){
+  ipcRenderer.send("panel-cmd", { t: "vol", v: parseInt(this.value, 10) || 0 });
+});
+window.addEventListener("keydown", function(e){ if(e.key === "Escape") window.close(); });
+</script>
+</body>
+</html>
