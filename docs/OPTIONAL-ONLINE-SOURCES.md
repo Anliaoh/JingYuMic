@@ -20,7 +20,7 @@
 | 站点检索 | `search` `parse_search` `jy_gqb_search` `jy_wy_search` `jy_kw_search` `jy_search_all` |
 | 取播放直链 | `jy_gqb_url` `jy_wy_url` `jy_kw_url` `resolve_download_url` |
 | 下载落盘 | `jy_download` `jy_download_url` `download_song` |
-| 歌曲详情 / 封面 | `fetch_song` `_wy_pic_url` `_plcov_music` `_plcov_bing` `nc_match` |
+| 歌曲详情 / 封面 | `fetch_song` `jy_wy_detail` `_wy_pic_url` `_plcov_music` `_plcov_bing` `nc_match` |
 | 歌词匹配 | `nc_get` `_nc_query` `_nc_pick` `nc_lyric` `_nc_lyric_raw` |
 | 源适配 | `src_netease` `src_qqmusic` `_netease_weapi` |
 
