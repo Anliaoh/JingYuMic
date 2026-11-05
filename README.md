@@ -165,23 +165,27 @@
 
 安装包只在 [Releases](../../releases) 页发布。仓库源码里**不包含**任何构建产物。
 
+最新版是 **v4.0.1**（2026-11-05）。附件：
+
 | 附件 | 适用 | 说明 |
 |---|---|---|
 | `JingYuMic-App-3.26.apk` | Android | WebView 外壳，2.7 MB，自签名（覆盖安装需与作者同签名） |
-| `JingYuMic-PC-win32-x64.zip` | Windows x64 | Electron 便携版，解压即用（`JingYuMic-PC.exe`），免安装 |
+| `JingYuMic-PC-Setup-4.0.1.exe` | Windows x64 | NSIS 安装包，122 MB，可自选安装目录，带开始菜单 / 桌面快捷方式与卸载入口 |
 | `SHA256SUMS.txt` | — | 上面两个文件的校验和 |
 
 校验方法（PowerShell）：
 
 ```powershell
-Get-FileHash .\JingYuMic-App-3.26.apk -Algorithm SHA256
+Get-FileHash .\JingYuMic-PC-Setup-4.0.1.exe -Algorithm SHA256
 ```
 
 和 `SHA256SUMS.txt` 里那行对一下即可。**任一附件都只是「壳」**——不含网页、不含音乐、不含服务端逻辑，
 装完必须能连到你自己部署的后端（`:58091`）才可用。
 
 > 两个包里都还留着作者内网地址的字符串常量（不影响功能，只影响默认值）。**首次启动后请在设置里改成你自己的地址。**
-> PC 便携版未做代码签名，Windows 可能弹 SmartScreen 提示，选「更多信息 → 仍要运行」。
+> PC 安装包未做代码签名，Windows 可能弹 SmartScreen 提示，选「更多信息 → 仍要运行」。
+> v0.1.0 那个便携版（`JingYuMic-PC-win32-x64.zip`）仍留在旧 Release 里，但它跑的是 10-31 的前端，
+> 缺 v4.01~v4.41 的播放状态机与歌词修复，不建议再下。
 
 ## 首次使用需要自己填的东西
 
