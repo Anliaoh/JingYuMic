@@ -1523,6 +1523,16 @@ body.maxed .winbtns .icoRestore{display:block}
     </div>
     <div class="lrephint">当前偏移：<b id="repAdjCur">0.00s</b>（在「音画补偿」之外，只挪这一句；负=来早了，正=来晚了）</div>
 
+    <label class="lbl">整首歌词偏移（这首歌所有行一起挪，立即生效，存平板上）</label>
+    <div class="adjrow" id="repWholeRow">
+      <button class="adjbtn" data-w="-2">−2s</button>
+      <button class="adjbtn" data-w="-0.5">−0.5s</button>
+      <button class="adjbtn rst" data-w="0">归零</button>
+      <button class="adjbtn" data-w="0.5">+0.5s</button>
+      <button class="adjbtn" data-w="2">+2s</button>
+    </div>
+    <div class="lrephint"><b id="repWholeCur">整首 0.00s</b>（负=歌词来早了，正=来晚了；与「只挪这一句」叠加）</div>
+
     <div class="mdesc" style="margin:12px 0 4px">记在平板上，不在这一版改。下次更新时统一修：填了偏移或正确的词会直接改，只选类型的话我会重查这首歌的歌词。</div>
     <div class="mrow" style="margin-top:14px">
       <button class="mbtn gh" id="repCancel">取消</button>
@@ -7314,12 +7324,20 @@ function fetchLrcAdj(name){
 function applyLrcAdj(baseLines, name){
   lrcBaseT = [];
   var adj = LRCAJ[name] || {};
+  /* 整首偏移用保留键 "*"（值=秒，正数=歌词往后推）。它跟逐行偏移是两个独立量：
+     每行生效时间 = 基准秒 + 本行偏移 + 整首偏移。
+     lrcBaseT 一律存「任何偏移前」的基准秒 —— 行 key 靠它算，存了偏移后的值
+     就会越调越偏（第二次微调的 key 和第一次对不上，旧值永远删不掉）。 */
+  var goff = parseFloat(adj["*"]) || 0;
   return (baseLines || []).map(function(ln, i){
     var bt = ln.t; lrcBaseT[i] = bt;
     var k = lrcadjKey(bt, ln.s);
-    var d = adj[k];
-    if(d){ return { t: Math.max(0, bt + d), s: ln.s, gi: ln.gi, tr: ln.tr }; }
-    return ln;
+    var d = parseFloat(adj[k]) || 0;
+    /* 一律返回新对象，绝不把 ln 原样交出去：baseLines 就是 lrcCache 里那批行，
+       lrcAdjWholeNudge / lrcAdjNudge 会就地改 .t，交引用等于连「基准时间」一起改了 ——
+       切歌回来再按基准算一遍，偏移就叠两倍。没有偏移时 t 保持原值。 */
+    return { t: (d || goff) ? Math.max(0, bt + d + goff) : bt,
+             s: ln.s, gi: ln.gi, tr: ln.tr };
   });
 }
 function lrcAdjPush(name){
@@ -7337,19 +7355,67 @@ function lrcAdjNudge(idx, step){
   var bt = (idx < lrcBaseT.length && lrcBaseT[idx] != null) ? lrcBaseT[idx] : l.t;
   var key = lrcadjKey(bt, l.s);
   LRCAJ[name] = LRCAJ[name] || {};
-  var cur = LRCAJ[name][key] || 0;
-  var nd = Math.max(-10, Math.min(10, Math.round((cur + step) * 100) / 100));
-  if(Math.abs(nd) < 0.001){ delete LRCAJ[name][key]; } else { LRCAJ[name][key] = nd; }
-  lrcLines[idx].t = bt + nd;            // 立即生效：高亮时间随这一句挪动
+  var cur = parseFloat(LRCAJ[name][key]) || 0;
+  var nd = (step === 0) ? 0
+    : Math.max(-10, Math.min(10, Math.round((cur + step) * 100) / 100));
+  LRCAJ[name][key] = nd;
+  /* 逐行微调必须叠加整首偏移：否则整首挪 -4.5 之后点一下本行，
+     这一行会被写回「只有本行偏移」的位置，两句之间直接打架。 */
+  var goff = parseFloat((LRCAJ[name] || {})["*"]) || 0;
+  lrcLines[idx].t = Math.max(0, bt + nd + goff);   // 立即生效：高亮时间随这一句挪动
   paintLyric(true);
   lrcAdjPush(name);
   var curEl = $("repAdjCur");
   if(curEl) curEl.textContent = (nd > 0 ? "+" : "") + nd.toFixed(2) + "s";
+  lrcAdjWholeShow();
   /* v3.101：面板点完不关，顶上那行「歌名 · 时间」也得跟着走 —— 否则
      用户看到「当前偏移 +0.50s」上面还挂着旧时间，像是没生效。 */
   var whereEl = $("repFor");
   if(whereEl) whereEl.textContent =
-    (splitName(curName).title || curName || "—") + " · " + fmt(l.t);
+    (splitName(curName).title || curName || "—") + " · " + fmt(lrcLines[idx].t);
+}
+
+/* ---- 整首歌词偏移（保留键 "*"，单位秒；正=歌词往后推，负=往前挪）----
+   按歌记忆（存平板那套 lrcadj 里，一个键，服务端无需改动），点完立即生效。 */
+function lrcAdjWholeCur(){
+  /* 当前整首偏移（秒）：没有就是 0 */
+  return parseFloat((LRCAJ[curName] || {})["*"]) || 0;
+}
+function lrcAdjWholeShow(){
+  /* 刷新面板上的整首读数：无偏移显示「整首 0.00s」 */
+  var el = $("repWholeCur");
+  if(!el) return;
+  var v = lrcAdjWholeCur();
+  el.textContent = "整首 " + (v > 0 ? "+" : "") + v.toFixed(2) + "s";
+}
+function lrcAdjWholeNudge(step){
+  var name = curName; if(!name) return 0;
+  LRCAJ[name] = LRCAJ[name] || {};
+  var cur = parseFloat(LRCAJ[name]["*"]) || 0;
+  var nv = Math.max(-10, Math.min(10, Math.round((cur + step) * 100) / 100));
+  LRCAJ[name]["*"] = nv;
+  var ad = LRCAJ[name] || {};
+  for(var i = 0; i < lrcLines.length; i++){
+    var li = lrcLines[i];
+    if(!li) continue;
+    /* 时间一律用「基准秒 + 本行偏移 + 新整首值」重算，不做 li.t + delta：
+       整首往负方向调时，前奏附近时间很短的行会被夹到 0（不为负是硬要求），
+       之后再点「归零」就永久回不到原位了。用基准秒重算，夹只影响当下显示。 */
+    var b = (i < lrcBaseT.length && lrcBaseT[i] != null) ? lrcBaseT[i] : null;
+    if(b == null){ li.t = Math.max(0, (li.t || 0) + (nv - cur)); continue; }
+    var kk = lrcadjKey(b, li.s);
+    li.t = Math.max(0, b + (parseFloat(ad[kk]) || 0) + nv);
+  }
+  paintLyric(true);
+  lrcAdjPush(name);
+  lrcAdjWholeShow();
+  /* 面板顶上的「歌名 · 时间」也跟着走，否则看着像没生效 */
+  if(LRC_REP.idx >= 0 && lrcLines[LRC_REP.idx]){
+    var whereEl2 = $("repFor");
+    if(whereEl2) whereEl2.textContent =
+      (splitName(name).title || name || "—") + " · " + fmt(lrcLines[LRC_REP.idx].t);
+  }
+  return nv;
 }
 
 function openLrcReport(idx){
@@ -7370,6 +7436,7 @@ function openLrcReport(idx){
   var ac = (LRCAJ[curName] && LRCAJ[curName][ak]) || 0;
   var ace2 = $("repAdjCur");
   if(ace2) ace2.textContent = (ac > 0 ? "+" : "") + ac.toFixed(2) + "s";
+  lrcAdjWholeShow();     // 整首偏移读数也刷一遍（这首歌以前的设置）
   $("lrcRepModal").classList.add("on");
 }
 function closeLrcReport(){ $("lrcRepModal").classList.remove("on"); }
@@ -7417,6 +7484,22 @@ if($("repAdjRow")){
     b.onclick = function(){
       var d = parseFloat(b.getAttribute("data-d")) || 0;
       lrcAdjNudge(LRC_REP.idx, d);
+    };
+  });
+}
+/* 「整首」那一行：−2 / −0.5 / 归零 / +0.5 / +2，点完立即生效 */
+if($("repWholeRow")){
+  Array.prototype.forEach.call($("repWholeRow").querySelectorAll(".adjbtn"), function(b){
+    b.onclick = function(){
+      var w = parseFloat(b.getAttribute("data-w")) || 0;
+      if(w === 0){
+        /* 归零：把当前值取负一次调回 0（本来就没偏移就什么都不做） */
+        var cv = lrcAdjWholeCur();
+        if(!cv){ lrcAdjWholeShow(); return; }
+        lrcAdjWholeNudge(-cv);
+        return;
+      }
+      lrcAdjWholeNudge(w);
     };
   });
 }
