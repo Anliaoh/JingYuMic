@@ -1,5 +1,5 @@
 // 鲸屿Mic PC 客户端 —— Electron 主进程
-// 启动后自动扫描局域网内的平板服务(58090)，加载播放界面；
+// 启动后自动扫描局域网内的平板服务(58090)，加载 QQ 音乐风格界面；
 // 找不到时显示连接页，可手动填 IP。
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require("electron");
 const { execFile } = require("child_process");
@@ -12,8 +12,11 @@ const PORT = 58090;
 app.disableHardwareAcceleration(); // 远程桌面/截屏环境更稳
 app.commandLine.appendSwitch("in-process-gpu"); // 规避个别显卡驱动下 GPU 子进程崩溃
 app.commandLine.appendSwitch("disable-gpu-compositing");
-/* 桌面播放器自动切歌/连播时直接 audio.play()、没有用户点击手势，会被 Chromium 默认的
-   自动播放策略拒掉（NotAllowedError）。这里整进程放开，只影响本客户端，不改变浏览器行为。 */
+/* v4.23c：Chromium 默认禁止「无用户手势的自动播放」。pc.html 在切歌 / 自动连播 /
+   跟随音箱切歌这些路径上都是直接 audio.play()，没有点击手势，于是被拒 →
+   抛 NotAllowedError: play() failed because the user doesn't have permission…
+   桌面音乐播放器本来就该能自己起播，这里整进程放开（只影响本客户端，
+   不改变任何浏览器行为）。 */
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 if (process.env.JY_DEBUG) app.commandLine.appendSwitch("remote-debugging-port", "9333");
 // 任务栏图标/分组用固定 ID，避免显示成 Electron 默认图标
@@ -185,7 +188,13 @@ function tabletURL(ip) {
   //   于是后面所有网页端修复在用户 PC 上都看不见（v3.94 已经栽过一模一样的一次）。
   // v4.13：156→157。pc.html 加了自动推进的 pre-flight（发「下一首」之前先问设备在放什么）
   //   和歌词失败重试，必须 bump，否则用户 PC 还在跑缓存里那份旧页。
-  return "http://" + ip + ":" + PORT + "/static/pc.html?v=188&cv=" + encodeURIComponent(app.getVersion());
+  // v4.41：185→186。pc.html 的「下一首/上一首」在随机模式下改成跟 App 同一套语义
+  //   （随机取一首、且不取当前这首），js 变了就必须 bump，否则用户端跑的还是缓存里那份。
+  // R6 前端配套：186→187。pc.html 新增 awaitStart 冻结态（点歌后进度条/歌词等设备
+  //   真出声才起跑），同样是 js 变了，必须 bump。
+  // 语音关闭复播修复：189→190。remote/pc 两端补「设备停+软件标志也停=外部显式停止」分支，
+  //   js 变了，必须 bump（PC 端 clearCache 已兜底，但按铁律同步戳）。
+  return "http://" + ip + ":" + PORT + "/static/pc.html?v=194&cv=" + encodeURIComponent(app.getVersion());
 }
 
 /* v3.96：加载平板页面之前先清掉 HTTP 缓存。
@@ -218,7 +227,7 @@ function createWindow() {
     title: "鲸屿Mic",
     backgroundColor: "#0D1017",
     autoHideMenuBar: true,
-    frame: false,          // 无边框：窗口按钮嵌在页面右上角，拖动靠 -webkit-app-region
+    frame: false,          // QQ 音乐式无边框：窗口按钮嵌在页面右上角，拖动靠 -webkit-app-region
     icon: path.join(__dirname, "icon.ico"),
     webPreferences: {
       nodeIntegration: true,
@@ -315,7 +324,7 @@ let dlyrWin = null;
 let dlyrDrag = null, dlyrDragTimer = null;   // 手动拖窗（见 dlyr-drag-begin）
 const trayState = { name: "", playing: false, dlyrOn: false, liked: false, mode: "", vol: null };   // 托盘/面板要显示的状态
 
-/* 托盘弹出面板（左键点托盘图标）：圆环三键 + ♡歌名 + 音量条 */
+/* 托盘弹出面板（左键点托盘图标）：圆环三键 + ♡歌名 + 音量条，布局照 QQ 音乐 */
 let trayPanel = null;
 function pushTrayState() {
   try { if (trayPanel && !trayPanel.isDestroyed()) trayPanel.webContents.send("tray-state", {
@@ -422,7 +431,7 @@ function toggleDlyr(force) {
   pushTrayState();          // 托盘面板菜单里的「桌面歌词」开关字样跟着换
 }
 
-/* ---------------- 托盘（左键开关主窗口；右键弹控制面板） ---------------- */
+/* ---------------- 托盘（左键开关主窗口；右键弹 QQ 音乐式控制面板） ---------------- */
 function showWin() {
   if (!win || win.isDestroyed()) {
     createWindow();
@@ -435,7 +444,7 @@ function showWin() {
 }
 
 function rebuildTray() {
-  // 原生右键菜单已停用：右键改弹 tray.html 控制面板。
+  // 原生右键菜单已停用：右键改弹 tray.html 控制面板（QQ 音乐式）。
   // 保留函数本身——toggleDlyr / tray-now 等处还在调它，做成空操作即可。
 }
 
@@ -454,7 +463,7 @@ function createTray() {
       showWin();
     }
   });
-  // 右键：弹/收控制面板
+  // 右键：弹/收 QQ 音乐式控制面板
   tray.on("right-click", () => toggleTrayPanel());
   tray.on("double-click", showWin);
 }
@@ -624,13 +633,13 @@ app.whenReady().then(() => {
     try { e.sender.send("icon-done", true, "已恢复默认图标"); } catch (err) {}
   });
 
-  // 账号登录窗口：滑块验证由用户完成，token 写回平板
+  // 小米账号登录窗口：滑块验证由用户完成，token 写回平板
   let loginWin = null, loginTimer = null;
   ipcMain.on("open-login", () => {
     if (!curAddr) { if (win) win.webContents.send("login-fail", "尚未连接平板"); return; }
     if (loginWin) { loginWin.focus(); return; }
     loginWin = new BrowserWindow({
-      width: 1060, height: 760, title: "登录账号",
+      width: 1060, height: 760, title: "登录小米账号",
       autoHideMenuBar: true, backgroundColor: "#FFFFFF",
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
     });

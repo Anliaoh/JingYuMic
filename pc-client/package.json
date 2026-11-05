@@ -1,16 +1,67 @@
 {
   "name": "jingyu-mic-pc",
   "productName": "鲸屿Mic-PC",
-  "version": "3.95.0",
+  "version": "4.0.1",
   "description": "鲸屿Mic PC 客户端",
+  "author": "鲸屿Mic",
   "main": "main.js",
   "window": {
     "icon": "icon.ico"
   },
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "build:win": "electron-builder --win --publish never"
   },
   "devDependencies": {
-    "electron": "^45.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.jingyu.mic.pc",
+    "productName": "鲸屿Mic-PC",
+    "copyright": "鲸屿Mic",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "connect.html",
+      "dlyr.html",
+      "tray.html",
+      "icon.ico",
+      "icon.png",
+      "icons/**/*",
+      "!**/*.bak_*",
+      "!dist/**"
+    ],
+    "asar": true,
+    "forceCodeSigning": false,
+    "publish": null,
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico",
+      "executableName": "JingYuMic"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "鲸屿Mic",
+      "artifactName": "鲸屿Mic-PC-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
