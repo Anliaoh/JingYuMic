@@ -4558,11 +4558,61 @@ def cached_tags(name):
         return _meta_cache.get(name) or {}
 
 
+# 下载器会把源站占位词写进内嵌标签（"kuwo" 之类），实测有歌的 artist / title /
+# album 全被写成同一个占位词，列表就显示成「kuwo - kuwo」、专辑栏也成了「kuwo」。
+# 只在这里挡「展示用元数据」，不动 read_tags() 和 jy_meta.json —— 时长、码率、
+# 封面还得照常读标签，缓存也不用重建。
+_JY_TAG_JUNK = {
+    "kuwo", "kugou", "gequbao", "netease", "qqmusic", "qq音乐", "酷我", "酷狗",
+    "网易云", "歌曲宝", "unknown", "未知", "未知艺术家", "未知标题", "未知专辑",
+    "未知歌手", "无标题", "none", "null", "n/a", "未命名",
+    # 下载器自带的英文占位最常见，之前只收了 "unknown"，"Unknown Artist"
+    # 这种带后缀的整串漏网，列表里照样显示。注意别加 "various artists"——
+    # 合辑的 artist 真值就是这个。
+    "unknown artist", "unknown title", "unknown album", "unknownartist",
+}
+# 占位词常带尾巴，判之前先削掉：
+#   · 括号后缀——album 不过 tidy_title，只能在这里削；
+#   · 尾部横杠/下划线——那是 tidy_title() 的 strip(" -_") 造出来的形态
+#     （"kuwo -" → "kuwo"），title 靠 display_meta 二次判能兜住，album 兜不住。
+# 注意这个正则只用于「判脏」，不参与返回值，所以削掉尾巴不会让真实专辑名丢字符。
+_JY_TAG_TAIL = re.compile(r"(?:[\(\[（【][^\)\]）】]*[\)\]）】]|\s*[-_]+)\s*$")
+
+
+def _tag_junk(v):
+    s = str(v or "").strip().lower()
+    if not s:
+        return True
+    if s in _JY_TAG_JUNK:
+        return True
+    # "kuwo(cover)" / "KUWO (官方)" / "kuwo(高音质)"：raw 看着不像占位词（所以旧逻辑
+    # 判它不是脏值），但 tidy_title() 之后恰好被削成光秃秃的 "kuwo" 照旧显示出去。
+    s2 = _JY_TAG_TAIL.sub("", s).strip()
+    if s2 and s2 in _JY_TAG_JUNK:
+        return True
+    # 整个字符串被一对括号包住时（"【kuwo】"），上面那条削完是空串，判不出来；
+    # 这里把括号字符直接抹掉再看一眼。只用于判脏，不影响返回值，误伤面为零。
+    s3 = re.sub(r"[\(\)\[\]（）【】]", "", s).strip(" -_")
+    if s3 and s3 != s and s3 in _JY_TAG_JUNK:
+        return True
+    # URL / 域名样式的占位标签同样不采信
+    return bool(re.search(r"(https?://|www\.|\.com|\.cn/|\.net/)", s))
+
+
 def display_meta(name):
-    """展示用的 (歌手, 歌名)。内嵌标签优先，没有才退回文件名解析。"""
+    """展示用的 (歌手, 歌名)。内嵌标签优先，明显占位标签不采信，再退回文件名解析。"""
     t = cached_tags(name)
-    artist = str(t.get("artist") or "").strip()
-    title = tidy_title(t.get("title") or "")
+    ra = str(t.get("artist") or "").strip()
+    rt = str(t.get("title") or "").strip()
+    artist = "" if _tag_junk(ra) else ra
+    # 歌名要判两次：raw 判一次，tidy_title() 之后再判一次。占位词带后缀时
+    # （"kuwo(cover)" / "KUWO (官方)" / "kuwo -"）raw 不像占位词，tidy 之后却正好
+    # 被削成 "kuwo"，于是脏值一路显示到列表上。
+    title = ""
+    if rt:
+        tt = tidy_title(rt)
+        if not (_tag_junk(rt) or _tag_junk(tt)):
+            title = tt
     fa, ft = split_title(name)
     fa = strip_track_no(fa)
     if not title:
@@ -4572,6 +4622,13 @@ def display_meta(name):
         if fa and not re.match(r"^\d", fa) and len(fa) <= 24:
             artist = fa
     return artist, title
+
+
+def display_album(name):
+    """展示用的专辑名。占位词（kuwo / Unknown Album …）一律返回空串。
+    以前只有 artist/title 过过滤，album 原样透传，列表里出现「kuwo」当专辑。"""
+    a = cached_tags(name).get("album")
+    return "" if _tag_junk(a) else str(a or "").strip()
 
 
 def read_cover(path):
@@ -9576,7 +9633,7 @@ class Handler(BaseHTTPRequestHandler):
                 m = song_meta(name) or {}
                 _a, _t = display_meta(name)
                 return self._json({"ok": True, "name": name, "artist": _a, "title": _t,
-                                   "album": m.get("album") or "", "dur": m.get("dur") or 0,
+                                   "album": display_album(name), "dur": m.get("dur") or 0,
                                    "hi": hi_cover_exists(name)})
 
             if u.path == "/api/metawarm":
@@ -9884,7 +9941,13 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     row = song_meta(nm)
                     if row:
-                        items[nm] = {k: row.get(k) for k in ("dur", "size", "album", "artist", "bit", "fmt")}
+                        it = {k: row.get(k) for k in ("dur", "size", "album", "artist", "bit", "fmt")}
+                        # 列表要显示歌手/专辑，占位词直接抹成空串，别让 "kuwo - kuwo"
+                        # 露到列表里（歌名有 display_meta 兜着，这里只补这两个字段）
+                        for _k in ("album", "artist"):
+                            if it.get(_k) and _tag_junk(it[_k]):
+                                it[_k] = ""
+                        items[nm] = it
                         dirty += 1
                 if dirty:
                     save_meta()
