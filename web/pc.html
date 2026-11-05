@@ -262,7 +262,7 @@ nav .navitem.on svg{color:var(--q)}
 .topbar{
   flex:0 0 auto;display:flex;align-items:center;gap:10px;
   padding:12px 10px 12px 24px;height:58px;
-  -webkit-app-region:drag;             /* 无边框窗口：整条顶栏都能拖动 */
+  -webkit-app-region:drag;             /* 源D式：整条顶栏都能拖动窗口 */
   user-select:none;
 }
 /* 拖动区里的交互件要摘出来，否则点不动 */
@@ -513,7 +513,7 @@ body.maxed .winbtns .icoRestore{display:block}
 }
 .sechead em{font-style:normal;font-size:11px;color:var(--dim);margin-left:2px;font-weight:400}
 .empty{padding:70px 20px;text-align:center;color:var(--dim);font-size:12.5px;line-height:2}
-/* 每日推荐 · 头图（纯绿渐变，去掉原先的蓝青尾色） */
+/* 每日推荐 · 头图（源D绿主题：纯绿渐变，去掉原先的蓝青尾色） */
 .rechero{
   margin:10px calc(24px + var(--sbw)) 0 24px;border-radius:16px;padding:18px 22px;display:flex;align-items:center;gap:18px;color:#fff;
   background:linear-gradient(120deg,#3AD17F 0%,#1FB36C 58%,#16A85F 100%);position:relative;overflow:hidden;
@@ -531,7 +531,7 @@ body.maxed .winbtns .icoRestore{display:block}
 .rhplay svg{width:14px;height:14px}
 .rhmore{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.16);color:#fff;font-size:12.5px;padding:9px 15px;border-radius:999px;transition:.15s}
 .rhmore:hover{background:rgba(255,255,255,.28)}
-/* 每日推荐 · 主题歌单卡（横滑方块封面） */
+/* 每日推荐 · 主题歌单卡（源D乐馆风：横滑方块封面） */
 .recpl-sec{margin:0;display:flex;flex-direction:column;min-height:0}
 .recpl-head{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
 .recpl-head b{font-size:16px;font-weight:800}
@@ -595,6 +595,10 @@ body.maxed .winbtns .icoRestore{display:block}
 .rsd-row{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;cursor:pointer;transition:background .12s}
 .rsd-row:hover{background:rgba(49,194,124,.09)}
 .rsd-row.cur{background:rgba(49,194,124,.13)}
+/* v4.34：右栏每日推荐行尾「⋯」—— 在线歌从菜单里选「下载到本地」 */
+.rsd-op{border:0;background:none;cursor:pointer;flex:0 0 auto;padding:2px 4px;color:var(--sub);display:grid;place-items:center;border-radius:6px;transition:color .12s,background .12s}
+.rsd-op:hover{color:var(--q);background:rgba(49,194,124,.10)}
+.rsd-op svg{width:15px;height:15px}
 .rsd-i{flex:0 0 16px;text-align:right;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 .rsd-n{flex:1 1 auto;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rsd-a{flex:0 0 auto;max-width:36%;font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -611,6 +615,15 @@ body.maxed .winbtns .icoRestore{display:block}
 .rsd-more:hover{color:var(--q);border-color:rgba(49,194,124,.45)}
 .rsd-more:disabled{opacity:.55;cursor:default}
 .rsd-end{text-align:center;font-size:11px;color:var(--dim);padding:7px 0 3px}
+/* v4.35：在线推荐「空的」空态。源A被限流（HTTP 520 → 熔断冷却）时服务端 online 会是
+   空数组，以前这一栏就只剩标题 + 一块白底，看着像卡住了。给一句人话 + 一颗重试。 */
+.rsd-empty{padding:18px 14px 20px;text-align:center;color:var(--sub);font-size:12px;line-height:1.75}
+.rsd-empty b{display:block;font-size:13px;color:var(--txt);font-weight:600;margin-bottom:5px}
+.rsd-empty .rsd-retry{margin-top:11px;border:1px solid var(--line);background:#fff;color:var(--q);
+  font-size:12px;padding:5px 18px;border-radius:8px;font-family:inherit;cursor:pointer;
+  transition:border-color .15s,box-shadow .15s,opacity .15s}
+.rsd-empty .rsd-retry:hover{border-color:rgba(49,194,124,.5);box-shadow:0 2px 10px -4px rgba(49,194,124,.55)}
+.rsd-empty .rsd-retry:disabled{opacity:.55;cursor:default;box-shadow:none;border-color:var(--line)}
 .recpl-card{width:auto;cursor:pointer;border-radius:12px;overflow:hidden;background:#fff;transition:.15s;
   border:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .recpl-card:hover{transform:translateY(-3px);box-shadow:0 10px 22px -10px rgba(0,0,0,.32)}
@@ -1616,7 +1629,7 @@ body.maxed .winbtns .icoRestore{display:block}
             </div>
             <div class="setcard">
               <div class="setrow2">
-                <label>音色（作用在电脑这条输出上；音箱的音效只能在家庭中枢里调）</label>
+                <label>音色（作用在电脑这条输出上；音箱的音效只能在家庭里调）</label>
                 <div class="setslider"><span>低音</span><input type="range" class="setrange" id="setEqBass"><b id="setEqBassV">0 dB</b></div>
               </div>
               <div class="setrow2">
@@ -1791,6 +1804,7 @@ body.maxed .winbtns .icoRestore{display:block}
   <button id="selRestore" style="display:none">恢复</button>
   <button id="selUnlike" style="display:none">从我喜欢移除</button>
   <button class="pri" id="selNext">下一首播放</button>
+  <button id="selDl">下载</button>
   <button class="danger" id="selDel">移到回收站</button>
   <button id="selExit">退出</button>
 </div>
@@ -1827,7 +1841,7 @@ body.maxed .winbtns .icoRestore{display:block}
 
     <div class="eqbox">
       <div class="eqhd"><b>音色与声场</b>
-        <em>低音、高音、平衡都作用在<b>电脑音响</b>这条输出上 —— 音箱的音效只能在家庭中枢里调，程序改不了它。</em>
+        <em>低音、高音、平衡都作用在<b>电脑音响</b>这条输出上 —— 音箱的音效只能在家庭里调，程序改不了它。</em>
       </div>
       <div class="eqrow"><span class="lab">低音</span><input type="range" id="eqBass" min="-12" max="12" step="1" value="0"><em id="eqBassV">0 dB</em></div>
       <div class="eqrow"><span class="lab">高音</span><input type="range" id="eqTreb" min="-12" max="12" step="1" value="0"><em id="eqTrebV">0 dB</em></div>
@@ -1860,7 +1874,7 @@ body.maxed .winbtns .icoRestore{display:block}
     <b>扫码登录账号</b>
     <div class="qrimg" id="qrBox"><div class="qrspin" id="qrSpin"></div><img id="qrImg" alt="登录二维码"></div>
     <div class="qrtip" id="qrTip">正在获取二维码…</div>
-    <div class="qrnote">用手机「家庭中枢」或「语音助手」App 扫一扫<br>并在手机上点「确认登录」</div>
+    <div class="qrnote">用手机「家庭」或「家庭」App 扫一扫<br>并在手机上点「确认登录」</div>
     <div class="mrow">
       <button class="mbtn gh" id="qrCancel">关闭</button>
       <button class="mbtn pri" id="qrRefresh">刷新二维码</button>
@@ -2241,6 +2255,17 @@ function nudgeAvlag(d){
   }
 }
 var gSwitchAt = 0;  // 切歌时间戳：保护窗内不让设备旧位置覆盖进度条
+/* ---- awaitStart：点歌后「命令已发、设备还没出声」的冻结态 ----
+   为什么需要：R6 把无损转码前移到下发播放命令之前，未缓存的无损歌从点歌到真出声
+   要 5.7~7.6 秒。这段时间 xiaomusic 的 /playingmusic 已经报「新歌名 + is_playing=true」，
+   但 offset/duration 还是上一首的（_start_time 要等命令真下发后才重置）。原来这里是
+   点歌瞬间就用本地墙钟起跑，2.8 秒保护窗一过还会把上一首的 offset 照抄进来 ——
+   进度条和歌词先跳、再被打回，看着就是「抢跑 + 乱跳」。
+   现在冻结期间 currentOffset() 直接返回 baseOffset（不推进），进度条与歌词共用这个
+   函数所以一起停住；只有拿到「设备真换到这首、且已在新曲开头」的硬证据才解锁，
+   用设备位置重锚。20 秒兜底。与 remote.html 同名同义，别两边写出差异。 */
+var awaitStart = false;
+var awaitStartAt = 0;
 /* 刚点的这一首还没在设备上生效：音箱换曲要 1~3 秒重新拉流，
    这段时间它回报的还是上一首。要是照抄，进度条和歌词会先跳回旧歌中段、
    等它真换过去再跳一次 —— 看着就是「切歌开头没回到最开始」。 */
@@ -2282,7 +2307,7 @@ var devPosAt = 0;        // 这个 position 是几时取的
 var devPosLast = -1;     // 上一次的 position：用来看它到底有没有在往前走
 var devPosMove = false;  // 这一首确实会往前走（电台之类 position 不动的别拿它判静止）
 var devAid = "";         // 当前曲目 id：换了就是换歌
-var extPaused = false;   // 设备被外部按停了（语音 / 遥控器 / 语音助手自己接了别的活）
+var extPaused = false;   // 设备被外部按停了（语音 / 遥控器 / 音箱自己接了别的活）
 var reAnchor = false;    // 刚从外部暂停恢复：这一拍把轴拉回设备的真实位置
 /* v3.91：设备报的 position **属于哪一首**。
    换歌的头几拍，设备还在报上一首的位置（上一首唱到 250 秒、这首歌只有 180 秒），
@@ -2417,6 +2442,7 @@ function readDevTruth(ps, name){
   return true;
 }
 var durCache = {};
+var lrcDur = {};
 var coverCache = {}, extCover = {};
 var pollSeq = 0;
 var scrubbing = false;
@@ -2479,6 +2505,8 @@ var lastPlList = [];        // 当前打开的歌单（名字数组）
 var curPlName = "";
 var lastSearchItems = [];   // 当前搜索结果（本地字符串 + 在线 item 混合）
 var lastRecItems = [];      // 当前推荐结果
+/* v4.34：推荐行在线项（名字→{name,id}），供批量下载取 id */
+var REC_ITEMS = {};
 
 /* 播放模式（与平板端一致） */
 var MODES = [
@@ -2587,7 +2615,7 @@ function renderTable(boxId, list, opt){
     const artist = typeof item === "string" ? splitName(name).artist : (item.artist || splitName(name).title && splitName(name).artist || splitName(name).artist);
     const title = typeof item === "string" ? splitName(name).title : (item.song || item.title || name);
     const dispName = item.online ? (title + (artist ? " - " + artist : "")) : name;
-    const dur = durCache[name] || durCache[dispName] || 0;
+    const dur = durCache[name] || durCache[dispName] || lrcDur[name] || lrcDur[dispName] || 0;
     const row = document.createElement("div");
     row.className = "trow" + (dispName === curName || name === curName ? " cur" : "");
     const noHtml = (dispName === curName || name === curName) && playing
@@ -2816,7 +2844,10 @@ function lpExcused(t){
 function lpMatch(t){
   if(!t || !t.closest) return null;
   if(lpExcused(t)) return null;                                // 输入框/歌词面板/弹层不参与长按
-  if(t.closest(".opb") || t.closest(".rsd-lk")) return null;   // 行内按钮不算长按区
+  /* v4.34：行内**任何按钮**一律不参与长按。原因：点「⋯」时 pointerdown 启动了 480ms
+     长按计时，但菜单弹层一出来 pointerup 落到弹层、main 收不到 → 计时器没清，480ms 后
+     照样 lpFire 进多选（用户实测「只单击 ⋯ 就触发」）。行本身是 div，长按行体照常进多选。 */
+  if(t.closest("button")) return null;   // 行内按钮不算长按区
   var r = t.closest(SEL_ROW_SEL);
   if(!r || !r.dataset || !r.dataset.name) return null;
   return r;
@@ -2930,6 +2961,35 @@ function selNextUp(){
                : ("已排进电脑队列的下一首：" + add.length + " 首（切到「电脑」输出才会放）"));
 }
 if($("selNext")) $("selNext").onclick = selNextUp;
+/* v4.34：批量下载 —— 选中里的在线歌逐首下载（推荐项从 REC_ITEMS 取 id，
+   队列里的在线项从 queue 取）。串行 700ms，别并发打爆下载。 */
+function selDownload(){
+  var names = Object.keys(SEL.set);
+  if(!names.length){ toast("先选几首再下载"); return; }
+  var items = [], seen = {};
+  names.forEach(function(nm){
+    var it = REC_ITEMS[nm] || null;
+    if(!it){
+      for(var j = 0; j < queue.length; j++){
+        if(queue[j] && queue[j].name === nm && queue[j].id){ it = queue[j]; break; }
+      }
+    }
+    if(it && it.id && !seen[it.id]){ seen[it.id] = 1; items.push(it); }
+  });
+  if(!items.length){ toast("选中的里没有可下载的在线歌曲"); return; }
+  try{ setSelMode(false, true); }catch(e){}
+  var i = 0, ok = 0;
+  toast("开始批量下载 " + items.length + " 首…");
+  (function step(){
+    if(i >= items.length){ toast("批量下载完成：" + ok + "/" + items.length + " 首"); try{ loadList(); }catch(e){} return; }
+    var it = items[i++];
+    var nm = it.title || it.name || "";
+    post(MM + "/api/play_online", { id: it.id, name: nm, song: nm, download: true })
+      .then(function(d){ if(d && d.ok) ok++; setTimeout(step, 700); })
+      .catch(function(){ setTimeout(step, 700); });
+  })();
+}
+if($("selDl")) $("selDl").onclick = selDownload;
 
 function selDelete(){
   var names = Object.keys(SEL.set);
@@ -3203,7 +3263,7 @@ function playItem(item){
      进度轴一直被当成「换歌」。所以发起推流的同一拍就把 curName 钉成**显示名**
      （优先「歌手 - 歌名」，服务端没给就退回点击时那个曲名），并打上 STREAM 标记；
      poll 在进入所有比对之前先把 URL 换回这个名字（见 poll 顶部 streamPullName）。
-     如果设备报的是别的歌名（用户直接对语音助手喊了下一首），标记立刻作废，交还正常逻辑。 */
+     如果设备报的是别的歌名（用户直接对音箱喊了下一首），标记立刻作废，交还正常逻辑。 */
 var STREAM = { name: "", url: "", at: 0 };
 var STREAM_TTL = 15 * 60 * 1000;      // 15 分钟兜底，别让标记永远挂着
 function streamClear(){ STREAM.name = ""; STREAM.url = ""; STREAM.at = 0; }
@@ -3220,7 +3280,7 @@ function streamPullName(pm){
   if(Date.now() - STREAM.at > STREAM_TTL){ streamClear(); return; }
   if(!pm || !pm.cur_music) return;
   if(streamUrlLike(pm.cur_music)){ pm.cur_music = STREAM.name; pm._stream = true; return; }
-  if(!sameSong(pm.cur_music, STREAM.name)) streamClear();   // 真的换人了
+  if(!sameSong(pm.cur_music, STREAM.name) && !pendLive()) streamClear();   // 真的换人了（缓冲期设备可能还报上一首，pendLive 内不急于作废，否则标记被清后流 URL 无法映射回显示名 → 跳本地歌/--:--）
 }
 function streamDisplayName(d, fallback){
   var t = String((d && (d.title || d.song)) || "").trim();
@@ -3263,13 +3323,16 @@ function streamStart(d, name, myb){
   curItem = { name: disp, online: true, id: (d.id || ""), stream: true };
   pendSet(disp);                 // 音箱换曲要 1~3 秒，这期间它报的旧东西一律不采信
   gSwitchAt = Date.now();
-  baseOffset = 0; baseTs = Date.now(); baseDur = (d.dur || d.duration || durCache[disp] || 0);
+  baseOffset = 0; baseTs = Date.now(); baseDur = (d.dur || d.duration || durCache[disp] || lrcDur[disp] || 0);
+  /* 推流也是「命令已发、设备还没出声」：设备拉流那几秒进度与歌词一起冻住，
+     等它亲口说这首开始了再解锁（与 boxPlay/App 同一套 awaitStart 规则）。 */
+  awaitStart = true; awaitStartAt = Date.now();
   endAt = 0; nearEndAt = 0; nearEndName = "";
   updateMeta(); setCover(disp, true);
   if(lyricOn){ loadLyric(disp); paintLyric(true); } else loadLyric(disp, true);
   toast("在线流播（不下载）：" + splitName(disp).title);
   ensureDid().then(function(did){
-    return api("/playurl?did=" + encodeURIComponent(did) + "&url=" + encodeURIComponent(d.url));
+    return api("/playurl?did=" + encodeURIComponent(did) + "&url=" + encodeURIComponent(d.url) + "&name=" + encodeURIComponent(disp));
   }).then(function(r){
     if(myb !== boxPlaySeq) return;
     if(r && r.ret && r.ret !== "OK") toast("设备没接住这条流：" + r.ret);
@@ -3318,8 +3381,14 @@ function boxPlay(item){
         curName = fn; curItem = { name: fn };
         pendSet(fn);                      // 音箱换曲要 1~3 秒，这期间它报的旧歌名一律不采信
         gSwitchAt = Date.now();
+        /* 进冻结态：下载/转码 + 音箱拉流这段（R6 下 5.7~7.6s）进度与歌词不许自己走 */
+        baseOffset = 0; baseTs = Date.now();
+        baseDur = durCache[fn] || lrcDur[fn] || 0;
+        awaitStart = true; awaitStartAt = Date.now();
+        endAt = 0; nearEndAt = 0; nearEndName = "";
         updateMeta(); setCover(fn, true);
         if(lyricOn){ loadLyric(fn); paintLyric(true); } else loadLyric(fn, true);
+        renderProgress();
         // 刚下载完要等 xiaomusic 把新文件收进歌单，不然 /playmusic 会「找不到歌曲」
         /* v3.81 真因：/api/play_online 只做「下载 + refresh_xiaomusic()」，
            它**不下发播放指令**。以前这里 toast 一句「已下载并开始播放」就收工，
@@ -3329,10 +3398,10 @@ function boxPlay(item){
           if(myb !== boxPlaySeq) return;
           post("/playmusic", { did: DID, musicname: fn, searchkey: "" }).then(function(){
             if(myb !== boxPlaySeq) return;
-            gpPublish({ name: fn, pos: 0, playing: true });
+            if(!awaitStart) gpPublish({ name: fn, pos: 0, playing: true });
             surBoxSyncArm(4000);
             setTimeout(poll, 600);
-          }).catch(function(e){ surGateAbort(); toast("起播失败：" + e.message); });
+          }).catch(function(e){ awaitStart = false; surGateAbort(); toast("起播失败：" + e.message); });
         }, d.local ? 80 : 1400);
       }).catch(function(e){
         if(myb !== boxPlaySeq) return;
@@ -3341,21 +3410,38 @@ function boxPlay(item){
     return;
   }
   toast("正在播放：" + splitName(name).title);
+  /* 乐观更新前移：以前这一整套藏在 .then() 里，等于「命令发出去 → 设备真出声」这
+     5.7~7.6 秒（R6 同步转码）PC 上还挂着上一首 —— 而 App 是点完立刻换名，两端不一致。
+     现在与 App 同口径：点完立刻换名/封面/歌词，并进入 awaitStart 冻结态
+     （进度条与歌词停在 0:00 等设备出声）。!pcOn() 的闸保留：电脑自己也在唱时，
+     歌名归 startPcItem 管，这里不许抢。 */
+  if(!pcOn()){
+    curName = name; curItem = { name: name };
+    pendSet(name);                       // 设备还没换过去之前，它回报的旧歌名一律不采信
+    gSwitchAt = Date.now();
+    baseOffset = 0; baseTs = Date.now();
+    baseDur = durCache[name] || lrcDur[name] || 0;
+    awaitStart = true; awaitStartAt = Date.now();
+    endAt = 0; nearEndAt = 0; nearEndName = "";
+    updateMeta(); setCover(name, true);
+    /* 以前这里是 if(lyricOn && !pcOn()) —— 软歌词面板没开就不重载。
+       结果音箱那一路换了歌，lrcLines 还挂着上一首：桌面歌词一直念旧词，
+       纯音乐干脆显示上一首的整段（「下一首是纯音乐，上一首的歌词还在」就是这个）。
+       歌词现在也喂桌面小窗，所以换歌一律重取，只是「要不要显示加载态」看面板开没开。 */
+    if(lyricOn){ loadLyric(name); paintLyric(true); } else loadLyric(name, true);
+    renderProgress();                    // 立刻把进度条摆到 0:00（冻结态，不会自己走）
+  }
   post("/playmusic", { did: DID, musicname: name, searchkey: "" })
     .then(function(){
       if(myb !== boxPlaySeq) return;
-      if(!pcOn()){ curName = name; curItem = { name: name }; pendSet(name); updateMeta(); setCover(name, true); gSwitchAt = Date.now(); }
-      /* 以前这里是 if(lyricOn && !pcOn()) —— 软歌词面板没开就不重载。
-         结果音箱那一路换了歌，lrcLines 还挂着上一首：桌面歌词一直念旧词，
-         纯音乐干脆显示上一首的整段（「下一首是纯音乐，上一首的歌词还在」就是这个）。
-         歌词现在也喂桌面小窗，所以换歌一律重取，只是「要不要显示加载态」看面板开没开。 */
-      if(!pcOn()){ if(lyricOn){ loadLyric(name); paintLyric(true); } else loadLyric(name, true); }
-      gpPublish({ name: name, pos: 0, playing: true });
+      /* awaitStart 期间不上轴：这时候设备报的还在上一首，写上去另一端会跟着起跑 */
+      if(!awaitStart) gpPublish({ name: name, pos: 0, playing: true });
       surBoxSyncArm(4000);          // 音箱拉流要两秒上下，先别急着纠它
       setTimeout(poll, 800);
     })
     .catch(function(e){
       if(myb !== boxPlaySeq) return;
+      awaitStart = false;           // 起播失败：解除冻结，别让进度条永远停在 0:00
       surGateAbort(); toast("播放失败：" + e.message);
     });
 }
@@ -3452,7 +3538,11 @@ function startPcItem(item, opt){
       pcSeekTo = -1;
       return true;
     }
-    return audio.play().then(function(){ return true; });
+    /* 播放被拒（NotAllowedError = 自动播放策略）时不要让它冒成未捕获的
+       promise rejection —— 外层 load.then 拿不满会整趟作废，界面上还会弹红字。
+       歌已经 load 进来了，返回 true 让后续基准/歌名照常推进；用户点一下播放即可出声。 */
+    return audio.play().then(function(){ return true; })
+      .catch(function(){ return true; });
   });
   return load.then(function(ok){
     if(my !== pcStartSeq || ok === false) return false;   // 作废的那一趟：别篡改歌名/基准
@@ -3467,7 +3557,7 @@ function startPcItem(item, opt){
       pendSet(curName);       // 设备还没切过去之前，它回报的旧歌名一律不采信
       gSwitchAt = Date.now();
       baseOffset = (opt.pos > 0.3) ? opt.pos : 0; baseTs = Date.now();
-      baseDur = durCache[curName] || 0;
+      baseDur = durCache[curName] || lrcDur[curName] || 0;
       endAt = 0;              // 新的一首：上一首的「刚播完」解除
       nearEndAt = 0; nearEndName = "";   // 歌尾痕迹也要清：别让旧歌的痕迹误判新歌播完
     }
@@ -3805,7 +3895,7 @@ function poll(){
     /* v4.01：在线流播时设备报的 cur_music 是那条流的 URL ——
        必须在**下面所有比对之前**把它换回钉住的显示名，否则每一拍都会被
        当成「音箱自己换歌了」，歌名变成 http…、歌词反复清空重取、进度轴反复归零。
-       设备真报了别的歌名（用户对语音助手喊了下一首）时，这个函数会把标记作废。 */
+       设备真报了别的歌名（用户对音箱喊了下一首）时，这个函数会把标记作废。 */
     streamPullName(pm);
     /* 先问设备的真实出声状态（见 readDevTruth）：后面「有没有在播」按它算 */
     if(boxOn()) readDevTruth(ps, (pm && pm.cur_music) || curName);
@@ -3836,7 +3926,7 @@ function poll(){
          所以缺了就用 /getplayerstatus 里设备亲口报的 position/duration 补上。 */
       var _softDead = !pm.is_playing && !((pm.offset || 0) > 0.2);
       var _sameAsCur = !curName || !pm.cur_music || sameSong(pm.cur_music, curName);
-      var dur = pm.duration || devDurSec || (curName && durCache[curName]) || 0;
+      var dur = pm.duration || devDurSec || (curName && durCache[curName]) || (curName && lrcDur[curName]) || 0;
       var pos = pm.offset || 0;
       /* 只在「还是这一首 + 软件标志假死」时才拿设备进度顶上：
          换歌那一拍设备的 position 可能还是旧歌的，拿它当新歌起点就错上加错。 */
@@ -3868,11 +3958,17 @@ function poll(){
            一上来就停在中后段。所以这里改成只认开头几秒。
            页面刚起来第一次拿到歌名不算换歌：那时歌可能真播到一半，照实采信。 */
         var firstSync = !prevName;
-        baseOffset = firstSync
-          ? (dur > 0 ? Math.min(pos, dur) : pos)
-          : ((pos > 0.2 && pos < 6 && (!dur || pos < dur - 2)) ? pos : 0);
-        baseTs = Date.now();
-        baseDur = dur || durCache[curName] || 0;
+        /* 冻结态不动进度轴：这一支在 R6 下会在「设备已报新名、但声音还没起」时命中，
+           那时 pos 还是上一首的秒数，照抄就把冻结中的进度条拽到中后段。歌名/封面/
+           歌词照旧更新（上面已经做了），等 poll 的解锁块按硬证据重锚。 */
+        if(!awaitStart){
+          baseOffset = firstSync
+            ? (dur > 0 ? Math.min(pos, dur) : pos)
+            : ((pos > 0.2 && pos < 6 && (!dur || pos < dur - 2)) ? pos : 0);
+          baseTs = Date.now();
+        }
+        baseDur = awaitStart ? (durCache[curName] || lrcDur[curName] || baseDur || 0)
+                             : (dur || durCache[curName] || lrcDur[curName] || 0);
         gSwitchAt = Date.now();
         endAt = 0;              // 新的一首：上一首的「刚播完」解除
         nearEndAt = 0; nearEndName = "";   // 歌尾痕迹也要清
@@ -3894,7 +3990,8 @@ function poll(){
            服务端 write_group 的换歌分支确实会用 patch 里的 pos：
              g["pos"] = max(0.0, float(patch.get("pos") or 0))
            所以把上一首的残留值发上来 = 直接把畸形轴写进共享状态，必须在这里挡住。 */
-        if(boxMoved) gpPublish({ name: curName, pos: baseOffset, playing: !!pm.is_playing }, true);
+        /* 冻结期不发布轴：这一拍设备还没真出声，写上去另一端会跟着起跑 */
+        if(boxMoved && !awaitStart) gpPublish({ name: curName, pos: baseOffset, playing: !!pm.is_playing }, true);
         /* v4.03 环绕：音箱换歌了，电脑这一路必须换成同一首。
            以前只把歌名改掉、本地 audio 还在放上一首 —— 于是「两台放不同的歌」，
            等组播轴纠偏时又被拽到新歌开头，听起来就是「电脑复播」。
@@ -4022,7 +4119,12 @@ function poll(){
           renderVolIco(ps.volume);
         }
       }
-      if(!stl) baseDur = dur || (curName && durCache[curName]) || baseDur || 0;
+      /* 冻结期：绝不采 dur（那是上一首的总长），只用本端已知的这首的时长 */
+      if(awaitStart){
+        baseDur = (curName && durCache[curName]) || (curName && lrcDur[curName]) || baseDur || 0;
+      }else if(!stl){
+        baseDur = dur || (curName && durCache[curName]) || (curName && lrcDur[curName]) || baseDur || 0;
+      }
       /* v3.90：**xiaomusic 的 offset 有时恒为 0**（它那条 is_playing 假死、或墙钟
          推算失败），而设备 /getplayerstatus 的 position 明明在走。以前照抄这个 0，
          进度条和歌词就一起被钉死在 00:00 —— 用户截图「歌词和进度条没动」就是它。
@@ -4053,19 +4155,56 @@ function poll(){
          （跟 posFix / devPosSec 那套「axis 恒 0 时改用设备位置」是两回事，
            这里只负责「暂停时别归零」。） */
       var pauseHold = pcPaused && !(posFix > 0.2);
-      if((extPaused || reAnchor) && devPosSec >= 0 && devPosOwned(curName)){
+      /* ---- awaitStart 冻结态：解锁 / 兜底 ----
+         硬证据四条：devFreshAt（设备 audio_id 真变过）、devStartSeen（换曲后采到过
+         <8 秒的位置，说明新曲真的从头上走了）、devPlay === true（设备亲口说在出声）、
+         sameSong(devAidName, curName)（这个位置属于当前这首）。
+         全中才解锁并用设备位置重锚，而不是用点歌那一刻的墙钟。
+         第四条之外的时序要求：证据必须是「这次点歌之后才产生的」。重播同一首时设备不
+         换曲，devFreshAt/devStartSeen 还是这首早先的旧值 → 瞬间全中，进度条先跳到设备
+         当下的 2:30、等真重拉再从 0 起跑，先跳后回。所以再要求：换曲戳晚于本次点歌，
+         或者设备报的位置本来就在曲头（真重拉起来了）。
+         20 秒兜底：转码再慢也不许永久冻住界面。 */
+      if(awaitStart && Date.now() - awaitStartAt > 20000) awaitStart = false;
+      var _asEvAfter = (devFreshAt && devFreshAt >= awaitStartAt - 1000) ||
+                       (devPosSec >= 0 && devPosSec < 8);
+      if(awaitStart && devPlay === true && devStartSeen && _asEvAfter &&
+         sameSong(devAidName, curName)){
+        baseOffset = (devPosSec > 0.2) ? devPosSec : 0;
+        baseTs = Date.now();
+        awaitStart = false;
+      }
+      /* awaitStart 期间不采这一支：点歌刚发出去时 extPaused/reAnchor 可能还是上一首留下的，
+         devPosSec 也是上一首的位置，照抄就是「一上来就跳到中后段」。 */
+      if((extPaused || reAnchor) && !awaitStart && devPosSec >= 0 && devPosOwned(curName)){
         /* 外部暂停期间 / 刚恢复：位置按设备说的钉死。
            xiaomusic 的 offset 是墙钟推算的，语音那几十秒它一直在往前数，
            照抄会让进度条凭空多走一截（语音一结束，画面猛地跳一下）。 */
         baseOffset = devPosSec; baseTs = Date.now();
         reAnchor = false;
-      }else if(!stl && !(swG && (pos > 4 || pendLive())) && !zeroSuspect && !pauseHold){
+      }else if(!awaitStart && !stl && !(swG && (pos > 4 || pendLive())) && !zeroSuspect && !pauseHold){
         /* v4.17（P4 / §23.5）：位置是「半个 RTT 之前」采的，补上这一截。
         跟组播轴 boxNow → axis_box_pos 那条 off+rt/2000 完全同一个口径，
         两轴这才对得上，也不会再随重启漂移。往返离谱（>1.5s）就不补。 */
         var _rt = (typeof pmRT === "number" && pmRT > 0 && pmRT < 1500) ? pmRT : 0;
-        baseOffset = posFix + _rt / 2000; baseTs = Date.now();
+        if(posFix > 0.2){ baseOffset = posFix + _rt / 2000; baseTs = Date.now(); }   // 流播软死（位置为0）保留本地时钟，进度继续走
       }
+      /* v4.23（JY-box-only）：box-only 稳定播放途中，若「本地外推轴」与「设备真实位置」
+         偏差 > 8s（往往是 xiaomusic 的 offset 落后/失真、而我们只在起点锚了一次），
+         就把轴拉回设备真值 —— 否则设备原生抢切歌时我们永远慢半拍（「放一首跳一首」）。
+         ⚠ 不放进上面那个 extPaused/reAnchor 的 if：那是「外部暂停 / 刚恢复」专用通道，
+         稳定播放时的慢漂移不能借它的守卫，否则这个纠正永远不触发。
+         守卫清单：只限 box-only（不开本机声）、非暂停/换歌/软死、设备位置可信
+         （devPosOwned 为真）、且设备位置不能超本首总长 +8s（那是别曲残留，按 posBad 处理）。 */
+      if(boxOn() && !pcOn() && !extPaused && !reAnchor && !stl && !awaitStart &&
+         !(swG && (pos > 4 || pendLive())) && !zeroSuspect && !pauseHold &&
+         playing && devPosSec >= 0 && devPosOwned(curName) &&
+         !(baseDur > 3 && devPosSec > baseDur + 8)){
+        if(Math.abs(rawOffset() - devPosSec) > 8){
+          baseOffset = devPosSec; baseTs = Date.now();
+        }
+      }
+      /* 冻结期不采设备的 dur（那是上一首的总长），用本端已知的这首的时长兜住 */
       if(curName && baseDur > 0 && !stl) durCache[curName] = baseDur;
       renderPlayIcon(); renderProgress();
       if(justEnded && !justEndedSyncing){
@@ -4446,6 +4585,10 @@ function currentOffset(){
     if(isFinite(ad) && ad > 1 && Math.abs(ad - baseDur) > 1.2) baseDur = ad;
     return audio.currentTime || 0;     // 本来就准，不补 AVLAG
   }
+  /* 冻结态（点了歌、设备还没真出声）：定格在 baseOffset，不推进。
+     进度条与歌词共用本函数，所以两者会一起停住 —— 这就是「播放条和歌词页要同步」。
+     为什么需要它，见 awaitStart 声明处那段说明。 */
+  if(awaitStart) return Math.max(0, baseOffset - (boxOn() ? avOf() : 0));
   var off = baseOffset;
   if(playing){
     off += (Date.now() - baseTs) / 1000;
@@ -4472,7 +4615,7 @@ function renderProgress(){
   $("pFill").style.width = pct + "%";
   $("pDot").style.left = pct + "%";
   $("tCur").textContent = fmt(off);
-  $("tDur").textContent = fmt(baseDur);
+  $("tDur").textContent = baseDur > 0 ? fmt(baseDur) : "--:--";
 }
 function renderPlayIcon(){
   $("playIco").innerHTML = playing
@@ -4839,11 +4982,24 @@ $("vpico").onclick = function(){ toggleMutePc(); };
     /* 显示轴在「只开音箱」时压后了 AVLAG，换算回设备时间要加回去；
        电脑出声时显示轴就是音频真实时间，直接落。 */
     var devSec = sec + ((boxOn() && !pcOn()) ? avOf() : 0);
-    if(pcOn() && audio && audio.src){ audio.currentTime = sec; }
+    var didLocal = false;
+    if(pcOn() && audio && audio.src){ audio.currentTime = sec; didLocal = true; }
     if(boxOn() && BOX_ONLINE){
-      boxSeek(devSec);                                  // v4.08：统一入口（不支持定位时自动跳过）
+      /* 别再无脑 toast「已跳到」—— 这台音箱 seek 恒失败，原来拖完会说「已跳到」、
+         实际音箱还在原处，用户以为跳了。等结果再说；已被记住「不支持定位」的设备
+         根本不会发请求，也必须给个说法，否则用户看到的是「拖了没反应」。 */
+      if(BOX_SEEK_DEAD){
+        toast(didLocal ? "音箱不支持拖动，已跳电脑" : "这台音箱不支持拖动进度");
+      }else{
+        boxSeek(devSec).then(function(d){
+          if(d && d.ret === "OK") toast("已跳到 " + fmt(sec));
+          else if(didLocal) toast("音箱跳不动，已跳电脑");
+          /* 只有音箱出声且失败：markBoxSeekDead 的提示已经说明原因，不再叠一条 */
+        });
+      }
+    }else{
+      toast("已跳到 " + fmt(sec));
     }
-    toast("已跳到 " + fmt(sec));
     gpPublish({ pos: devSec, playing: playing }, true);
     setTimeout(poll, 500);
   });
@@ -4931,7 +5087,7 @@ try{
 }catch(e){}
 
 /* 自定义头像：图存在服务端（/api/avatar），PC 与 App 读同一张，
-   换一次两端一起变；没设过时退回默认头像，再退回昵称首字。 */
+   换一次两端一起变；没设过时退回头像，再退回昵称首字。 */
 var AVA = { ts: 0 };
 try{ AVA.ts = parseInt(localStorage.getItem("jy_ava_ts") || "0", 10) || 0; }catch(e){}
 function avaUrl(){ return MM + "/api/avatar?t=" + (AVA.ts || 0); }
@@ -5083,7 +5239,7 @@ document.addEventListener("click", function(e){
 });
 document.addEventListener("keydown", function(e){ if(e.key === "Escape" && acctOpen) closeAcctPop(); });
 if($("popRefresh")) $("popRefresh").onclick = function(){
-  toast("正在向设备端拉取账号资料…");
+  toast("正在向拉取账号资料…");
   loadAcct(true);
 };
 if($("popLogin")) $("popLogin").onclick = function(){ closeAcctPop(); $("btnLogin").click(); };
@@ -6100,10 +6256,10 @@ function closeThemeView(){
 }
 /* 主题卡的封面候选地址（按优先顺序给最多 4 个，前一个失败就试下一个）。
    歌单是「按主题聚出来的一组歌」，本身没有封面，所以拿里面一首歌的封面当代表
-   —— 自动歌单通常也是这么做的。
+   —— 源D的自动歌单也是这么做的。
    实测：主题歌单里往往本地歌占多数、在线歌只有几首，而源站某首会超时取不到，
    所以两侧都要收候选，不能只押一种。 */
-/* 卡面第二行：优先显示服务端给的副标题（「跑步音乐：运动必备活力节奏」这类
+/* 卡面第二行：优先显示服务端给的副标题（源D那种「跑步音乐：运动必备活力节奏」
    的两段式），没给就退回「N 首」 */
 function cardSub(p){
   if(p && p.desc) return p.desc;
@@ -6132,6 +6288,13 @@ function themeCoverUrls(p){
     s = ss[i];
     if(s && !s.online && s.name) add(MM + "/api/cover?name=" + encodeURIComponent(s.name));
   }
+  /* ④ 一首封面都没有（歌单里的歌全没图 / 空卡）：按歌单名字找一张。
+     App 端（remote.html 的 themeCoverUrls）早就有这一步，PC 一直没有 ——
+     源A一挂（520），卡里所有歌的 cover 都是空，App 还能出关键词图，
+     PC 就只剩色块 + 首字，同一张歌单两端看起来像两份数据（用户实测反馈）。
+     /api/plcover 是服务端按关键词找图 + 裁方 + 落盘缓存，失败会走 onerror 换下一个。 */
+  var kw = (p && (p.title || p.name)) || "";
+  if(kw) add(MM + "/api/plcover?name=" + encodeURIComponent(kw));
   return out;
 }
 /* 右栏：在线 / 本地单曲的紧凑列表。
@@ -6150,6 +6313,7 @@ function recSideRow(s, it, idx, isLocal){
      在线歌用接口给的曲名。 */
   row.dataset.name = it.name || "";
   if(!isLocal) row.dataset.online = "1";
+  if(!isLocal && it.id) REC_ITEMS[it.name] = it;
   row.title = it.name + (s.artist ? " · " + s.artist : "");
   row.innerHTML = '<span class="rsd-i">' + idx + '</span>' +
     '<span class="rsd-n">' + esc(s.song || s.title || it.name) + '</span>' +
@@ -6162,6 +6326,21 @@ function recSideRow(s, it, idx, isLocal){
   };
   var lk = row.querySelector(".rsd-lk");
   lk.onclick = function(e){ e.stopPropagation(); lk.classList.toggle("on", toggleLike(it.name)); };
+  /* v4.34：行尾「⋯」—— 在线歌从菜单里选「下载到本地」
+     （以前每日推荐这行只有 ♥，用户反映「没有下载入口」）。 */
+  var op = document.createElement("button");
+  op.className = "rsd-op"; op.title = "更多";
+  op.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg>';
+  op.onclick = function(ev){
+    ev.stopPropagation();
+    showRowMenu(ev, {
+      name: it.name, disp: it.name,
+      title: s.song || s.title || it.name,
+      online: !isLocal, id: (s && s.id) || it.id || "",
+      local: !!isLocal, pl: ""
+    });
+  };
+  row.appendChild(op);
   return row;
 }
 
@@ -6254,6 +6433,22 @@ function renderRecSide(box, onl, loc){
   mkBlock("本地歌单里的好歌", "点击即播", "loc", true);
   // 首屏各 12 首；服务端有没有更多，等第一次点/滚动了才知道
   recSideFeed("onl", onl || [], false);
+  /* v4.35：在线那一栏空的时候（源A限流/熔断 → 服务端 online=[]），别留一个只有标题的
+     白框。给「暂时没取到 + 重试」；重试把 recSeed 加一，换个种子重新生成 —— 种子进
+     服务端缓存 key，所以不会又把同一份空结果端回来。 */
+  if(!(onl && onl.length)){
+    var eb = document.createElement("div");
+    eb.className = "rsd-empty";
+    eb.innerHTML = '<b>暂时没取到在线歌</b>在线曲库这会儿不太配合，本地歌单照常能听' +
+                   '<div><button type="button" class="rsd-retry">重试</button></div>';
+    var rb = eb.querySelector(".rsd-retry");
+    rb.onclick = function(){
+      rb.disabled = true; rb.textContent = "重新生成中…";
+      recSeed++;
+      try{ loadRecommend(); }catch(e){ rb.disabled = false; rb.textContent = "重试"; }
+    };
+    recSideSt.body["onl"].appendChild(eb);
+  }
   recSideFeed("loc", loc || [], true);
   if(sec.children.length) box.appendChild(sec);
 }
@@ -6815,6 +7010,7 @@ function loadLyric(name, silent){
     fetchLyricSmart(name)
       .then(function(d){
         var lines = parseLrc(d.lrc || "");
+        (function(){ var _mt=0; for(var li=0; li<lines.length; li++){ if(lines[li].t > _mt) _mt = lines[li].t; } if(_mt > 30) lrcDur[name] = _mt; })();
         lrcCache[name] = lines;          // 存「基准」（未应用偏移）的行，每次加载都按 LRCAJ 重算
         if(!sameSong(name, curName)) return;
         go(lines);
@@ -7922,7 +8118,7 @@ function fillAbout(){
     abSet("abRowAcct", "abAcct", "acct", t, !!(d && d.valid));
   }).catch(function(){ abSet("abRowAcct", "abAcct", "acct", "未知", false); });
   var cc = $("abCmd");
-  if(cc) cc.textContent = 'ssh -p 8022 u0_a263@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
+  if(cc) cc.textContent = 'ssh -p 8022 用户名@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
   var out = $("abOut");
   if(out) out.style.display = "none";
 }
@@ -8576,7 +8772,7 @@ function markBoxSeekDead(){
 function boxSeek(sec){
   if(BOX_SEEK_DEAD) return Promise.resolve(null);
   return api("/seek?did=" + encodeURIComponent(DID) + "&sec=" + Number(sec).toFixed(2))
-    .then(function(d){ if(d && d.ok === false) markBoxSeekDead(); return d; })
+    .then(function(d){ if(!d || d.ret !== "OK") markBoxSeekDead(); return d; })
     .catch(function(){ markBoxSeekDead(); return null; });
 }
 
@@ -9180,7 +9376,7 @@ function stemGo(partBox, partPc, opt){
       post("/playmusic", { did: DID, musicname: name, searchkey: "" }).catch(function(){});
     }else{
       api("/playurl?did=" + encodeURIComponent(DID) + "&url=" +
-          encodeURIComponent(stemUrlOf(partBox))).catch(function(e){
+          encodeURIComponent(stemUrlOf(partBox)) + "&name=" + encodeURIComponent(name)).catch(function(e){
         toast("推给音箱失败：" + (e.message || e));
       });
     }

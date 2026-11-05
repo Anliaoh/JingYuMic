@@ -12,6 +12,9 @@ const PORT = 58090;
 app.disableHardwareAcceleration(); // 远程桌面/截屏环境更稳
 app.commandLine.appendSwitch("in-process-gpu"); // 规避个别显卡驱动下 GPU 子进程崩溃
 app.commandLine.appendSwitch("disable-gpu-compositing");
+/* 桌面播放器自动切歌/连播时直接 audio.play()、没有用户点击手势，会被 Chromium 默认的
+   自动播放策略拒掉（NotAllowedError）。这里整进程放开，只影响本客户端，不改变浏览器行为。 */
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 if (process.env.JY_DEBUG) app.commandLine.appendSwitch("remote-debugging-port", "9333");
 // 任务栏图标/分组用固定 ID，避免显示成 Electron 默认图标
 app.setAppUserModelId("com.jingyu.mic.pc");
@@ -182,7 +185,7 @@ function tabletURL(ip) {
   //   于是后面所有网页端修复在用户 PC 上都看不见（v3.94 已经栽过一模一样的一次）。
   // v4.13：156→157。pc.html 加了自动推进的 pre-flight（发「下一首」之前先问设备在放什么）
   //   和歌词失败重试，必须 bump，否则用户 PC 还在跑缓存里那份旧页。
-  return "http://" + ip + ":" + PORT + "/static/pc.html?v=173&cv=" + encodeURIComponent(app.getVersion());
+  return "http://" + ip + ":" + PORT + "/static/pc.html?v=188&cv=" + encodeURIComponent(app.getVersion());
 }
 
 /* v3.96：加载平板页面之前先清掉 HTTP 缓存。

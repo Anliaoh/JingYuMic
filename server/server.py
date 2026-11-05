@@ -63,7 +63,25 @@ LVID_DIR = os.path.join(CONF_DIR, "lvideo")
 PORT = 58091
 BACKEND_API = "http://127.0.0.1:58090"
 
-for d in (CACHE_DIR, COVER_DIR, LRC_DIR, LVID_DIR):
+# ------------------------------------------------- JY-PLCACHE 歌单/推荐「先下后播」缓存
+# 用户原话（v4.33）：「出歌单的同时，把歌曲文件、封面、歌词同时储存起来，就不用等那么久的缓冲了。」
+# 背景：在线歌原本走 /api/jy_stream 代理上游，起播要等 1~3s 上游缓冲，期间设备还报上一首，
+#       连带把播放条/歌词页/播放列表一起「跳回本地歌」（已用 pendLive() 兜住显示，但缓冲本身还在）。
+# 思路：推荐/歌单一出就后台把每首在线歌的 音频+封面+歌词 落进一个**独立目录**
+#       （PLAYLIST_CACHE，不进 /sdcard/Music，所以不污染「本地曲库」视图），
+#       播放时改喂本地文件（/api/plfile），音箱拿到的是已下好的 mp3 → 零缓冲立刻出声。
+# 范围：预取「所有推荐的歌」（out["online"] + out["playlists"].songs），第二天（≈1 天）删除，
+#       容量+时间双闸兜底（见 PL_MAX_MB / PL_MAX_AGE_D）。单首失败静默，绝不拖慢前台。
+PLAYLIST_CACHE = os.path.join(CACHE_DIR, "playlist")
+PL_MAX_MB = 1536          # 容量闸：≈1.5GB，够一整天推荐（几十首）还留余量，吃不满 SD 卡
+PL_MAX_AGE_D = 1          # 天数闸：用户原话「第二天删除」—— 比今天旧的整批清掉
+PL_MAX_FILES = 30 * 1024 * 1024   # 单文件上限 30MB：正常一首 ≤~15MB，远超就是坏流，别落盘
+PL_PREFETCH_WORKERS = 2   # 后台预取下歌并发数（上游锁只有 2 名额，别全开抢前台搜索）
+PL_PROTECT_S = 600        # 保护窗：10 分钟内被写过/读过的别动（很可能正在播）
+PL_MIN_GAP_S = 90         # 两次清理最小间隔：连点几首歌也别连着扫目录
+PL_BOOT_DELAY_S = 25      # 开机后先等 xiaomusic 把自己准备好，再动缓存目录
+
+for d in (CACHE_DIR, COVER_DIR, LRC_DIR, LVID_DIR, PLAYLIST_CACHE):
     os.makedirs(d, exist_ok=True)
 
 AVATAR_FILE = os.path.join(CONF_DIR, "avatar.png")
@@ -311,6 +329,336 @@ def _wavcache_boot():
     except Exception:
         return
     _wavcache_run("boot")
+
+
+# ============================================================ JY-PLCACHE
+# 歌单/推荐「先下后播」缓存：推荐一出来就后台把每首在线歌的 音频+封面+歌词 落进
+# PLAYLIST_CACHE（独立目录，不进 /sdcard/Music，不污染「本地曲库」视图），播放时改喂
+# 本地文件（/api/plfile），音箱拿到已下好的 mp3 → 零缓冲立刻出声。
+# 设计要点（与 JY-WAVCACHE 同思路，但目的不同）：
+#   · 失败静默：预取是「锦上添花」，任何一步挂了都退回前台既有 stream/下载路径，绝不拖慢前台；
+#   · 去重：按 sid 记索引，已下好的跳过；同一首出现在多张卡也只下一次；
+#   · 无损不缓存：音箱放不了 FLAC/APE，留给前台走「下载→转 wav」；
+#   · 双闸清理：容量(PL_MAX_MB) + 天数(PL_MAX_AGE_D=1 ≈ 第二天删除)，正被播着的受保护。
+PL_INDEX_FILE = os.path.join(PLAYLIST_CACHE, ".index.json")
+_pl_index = None
+# RLock：调用方常在持有本锁的情况下再调 _pl_index_get（嵌套获取），必须用可重入锁，
+# 否则 threading.Lock 非重入 → 死锁（会直接把 /api/play_online 的处理线程挂死）。
+_pl_index_lock = threading.RLock()
+
+
+def _pl_key(sid):
+    """把任意在线 id 变成文件名安全的短串（gqb:123 -> gqb_123；wy:273.. -> wy_273..）。"""
+    s = re.sub(r"[^A-Za-z0-9._-]", "_", str(sid or ""))
+    return s[:160] or "x"
+
+
+def _pl_index_load():
+    global _pl_index
+    try:
+        with open(PL_INDEX_FILE, encoding="utf-8") as f:
+            _pl_index = json.load(f)
+    except Exception:
+        _pl_index = {}
+
+
+def _pl_index_get():
+    global _pl_index
+    if _pl_index is None:
+        with _pl_index_lock:
+            if _pl_index is None:
+                _pl_index_load()
+    return _pl_index
+
+
+def _pl_index_save():
+    try:
+        tmp = PL_INDEX_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_pl_index_get(), f, ensure_ascii=False)
+        os.replace(tmp, PL_INDEX_FILE)
+    except Exception as e:
+        log("pl_index save fail %r" % (e,))
+
+
+def _pl_audio_path(sid):
+    return os.path.join(PLAYLIST_CACHE, _pl_key(sid) + ".mp3")
+
+
+def _pl_audio_ready(sid):
+    p = _pl_audio_path(sid)
+    return os.path.isfile(p) and os.path.getsize(p) > 10000
+
+
+def _pl_cache_lyric(sid, song, artist):
+    """把歌词写进 LRC_DIR（serve_lyric 只读这里，复用现有链路，客户端零改动）。
+    已有文件不覆盖（别冲掉本地歌已匹配好的词）；失败静默。
+    只走 gqb 详情直取（一次请求，不触发全量搜索），其余源留给客户端按需取。"""
+    if not song:
+        return
+    name = (("%s - %s" % (artist, song)) if artist else song)
+    p = os.path.join(LRC_DIR, sanitize_filename(name) + ".lrc")
+    if os.path.isfile(p) and os.path.getsize(p) > 0:
+        return
+    src, mid = jy_src_of(sid)
+    if src != "gqb" or not mid:
+        return
+    try:
+        info = fetch_song(mid)
+        lrc = info.get("lrc") or ""
+        if lrc and not is_junk_lrc(lrc):
+            os.makedirs(LRC_DIR, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(lrc)
+            log("pl lrc cached: %s" % name)
+    except Exception as e:
+        log("pl lrc prefetch fail %s: %r" % (sid, e))
+
+
+def _cache_one_song(sid, song="", artist=""):
+    """缓存一首在线歌的 音频+封面+歌词 到 PLAYLIST_CACHE。单首失败静默。"""
+    if not sid:
+        return
+    # 已下好的：只补一下歌词（音频够了）
+    if _pl_audio_ready(sid):
+        _pl_cache_lyric(sid, song, artist)
+        return
+    try:
+        url, src, note, _s, _a = jy_resolve(sid, song, artist)
+    except Exception as e:
+        log("pl prefetch resolve fail %s: %r" % (sid, e))
+        return
+    if not url:
+        return
+    ext = _url_ext(url)
+    if ext in _LOSSLESS_EXT:
+        return                                   # 无损交给前台「下载→转 wav」
+    dest = _pl_audio_path(sid)
+    tmp = dest + ".part"
+    try:
+        hdrs = {"User-Agent": UA}
+        _ref = ""  # 本仓库不提供在线源，Referer 留空
+        if _ref:
+            hdrs["Referer"] = _ref
+        req = urllib.request.Request(url, headers=hdrs)
+        total = 0
+        with opener().open(req, timeout=90) as r, open(tmp, "wb") as f:
+            while True:
+                chunk = r.read(256 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                total += len(chunk)
+                if total > PL_MAX_FILES:
+                    break
+        if total < 10000:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            return
+        os.replace(tmp, dest)
+    except Exception as e:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        log("pl prefetch audio fail %s: %r" % (sid, e))
+        return
+    # 封面（复用在线封面落盘缓存，幂等）
+    # v4.35：原来这里是 `_, mid = jy_src_of(sid); online_cover_bytes(mid)` —— 传错了一格。
+    # online_cover_bytes 要的是**整条 sid**（纯数字＝源A id），给拆出来的 mid 对源A
+    # 恰好一样所以一直没暴露；kw/wy 进来就必然拉空。现在只对纯数字走这条。
+    try:
+        if str(sid or "").isdigit():
+            online_cover_bytes(sid)
+    except Exception:
+        pass
+    # 歌词（只 gqb 直取，写 LRC_DIR 复用 serve_lyric 链路）
+    _pl_cache_lyric(sid, song or _s, artist or _a)
+    # 记索引（dur 顺手存，play_online 直接取，省一次反查）
+    try:
+        with _pl_index_lock:
+            idx = _pl_index_get()
+            idx[sid] = {
+                "path": os.path.basename(dest),
+                "name": (("%s - %s" % (artist or _a, song or _s))
+                         if (artist or _a) else (song or _s)),
+                "dur": jy_src_dur(sid) or 0,
+                "mtime": int(os.path.getmtime(dest)),
+            }
+            _pl_index_save()
+    except Exception:
+        pass
+    log("pl cached: %s (%dKB)" % (sid, os.path.getsize(dest) // 1024))
+
+
+def prefetch_playlist_cache(out):
+    """推荐/歌单返回后后台预取：所有 online 歌的 音频+封面+歌词 落 PLAYLIST_CACHE。
+    非阻塞：起 daemon 线程跑，不拖慢 /api/recommend 的响应。"""
+    songs = []
+    # 1) 推荐在线列表：out["online"] 是歌字典列表，每项带 online=True + id
+    for c in (out.get("online") or []):
+        if isinstance(c, dict) and c.get("online") and c.get("id"):
+            songs.append((c["id"], c.get("song") or c.get("title") or "",
+                          c.get("artist") or ""))
+    # 2) 主题歌单：out["playlists"] 是 [{songs:[...]}]
+    for pl in (out.get("playlists") or []):
+        if not isinstance(pl, dict):
+            continue
+        for c in (pl.get("songs") or []):
+            if isinstance(c, dict) and c.get("online") and c.get("id"):
+                songs.append((c["id"], c.get("song") or c.get("title") or "",
+                              c.get("artist") or ""))
+    if not songs:
+        return
+    seen, uniq = set(), []
+    for sid, s, a in songs:
+        if sid in seen:
+            continue
+        seen.add(sid)
+        uniq.append((sid, s, a))
+    log("pl prefetch queued: %d songs" % len(uniq))
+
+    def _run():
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=PL_PREFETCH_WORKERS) as ex:
+                for sid, s, a in uniq:
+                    ex.submit(_cache_one_song, sid, s, a)
+        except Exception as e:
+            log("pl prefetch pool err %r" % (e,))
+        finally:
+            # 预取跑完扫一次：把没下成的、过期的清掉（双闸）
+            try:
+                plcache_after_write("prefetch")
+            except Exception:
+                pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def plcache_stat():
+    rows, total = [], 0
+    try:
+        for fn in os.listdir(PLAYLIST_CACHE):
+            if fn.startswith(".") or not fn.lower().endswith((".mp3", ".m4a", ".aac")):
+                continue
+            p = os.path.join(PLAYLIST_CACHE, fn)
+            try:
+                st = os.stat(p)
+            except Exception:
+                continue
+            rows.append((p, int(st.st_size), float(st.st_mtime)))
+            total += int(st.st_size)
+    except Exception:
+        pass
+    return rows, total
+
+
+def plcache_open_paths():
+    """此刻正被**任意**进程打开着的 PLAYLIST_CACHE 音频（很可能正在播）。"""
+    out = set()
+    try:
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                fds = os.listdir("/proc/%s/fd" % pid)
+            except Exception:
+                continue
+            for fd in fds:
+                try:
+                    tgt = os.readlink("/proc/%s/fd/%s" % (pid, fd))
+                except Exception:
+                    continue
+                if tgt.startswith(PLAYLIST_CACHE + os.sep):
+                    out.add(tgt)
+    except Exception:
+        pass
+    return out
+
+
+def plcache_sweep(reason=""):
+    """容量+天数双闸清理（见 WAVCACHE）。返回 (删掉几个, 释放多少字节)。"""
+    rows, total = plcache_stat()
+    if not rows:
+        return 0, 0
+    now = time.time()
+    cap = int(PL_MAX_MB) * 1024 * 1024
+    age_cut = now - float(PL_MAX_AGE_D) * 86400.0
+    protect_cut = now - float(PL_PROTECT_S)
+    openp = plcache_open_paths()
+    rows.sort(key=lambda r: r[2])
+    live = total
+    freed = 0
+    removed = 0
+    for path, size, mtime in rows:
+        if path in openp:                  # 正被播着：不碰
+            continue
+        if mtime >= protect_cut:           # 保护窗内：刚落地的那首
+            continue
+        if not (mtime <= age_cut or live > cap):
+            continue
+        try:
+            os.remove(path)
+        except Exception:
+            continue
+        removed += 1
+        freed += size
+        live -= size
+    # 索引同步清掉已删的条目
+    try:
+        with _pl_index_lock:
+            idx = _pl_index_get()
+            dead = [k for k, v in idx.items()
+                    if not os.path.isfile(os.path.join(PLAYLIST_CACHE, v.get("path", "")))]
+            for k in dead:
+                idx.pop(k, None)
+            if dead:
+                _pl_index_save()
+    except Exception:
+        pass
+    return removed, freed
+
+
+_pl_lock = threading.Lock()
+_pl_next_ts = 0.0
+
+
+def plcache_after_write(reason=""):
+    """「刚（可能）落了一个文件」时该调的入口：异步 + 节流，调用方不被拖住。"""
+    global _pl_next_ts
+    with _pl_lock:
+        now = time.time()
+        if now < _pl_next_ts:
+            return False
+        _pl_next_ts = now + float(PL_MIN_GAP_S)
+    threading.Thread(target=_plcache_run, args=(reason,), daemon=True).start()
+    return True
+
+
+def _plcache_run(reason):
+    try:
+        with _pl_lock:
+            removed, freed = plcache_sweep(reason)
+        if removed:
+            log("plcache sweep(%s): removed=%d freed=%.1fMB"
+                % (reason, removed, freed / 1048576.0))
+    except Exception as e:
+        try:
+            log("plcache sweep fail(%s) %r" % (reason, e))
+        except Exception:
+            pass
+
+
+def _plcache_boot():
+    """开机补扫一次：把上次运行攒下的收敛回去。"""
+    try:
+        time.sleep(PL_BOOT_DELAY_S)
+    except Exception:
+        return
+    _plcache_run("boot")
 
 
 _opener = None
@@ -1076,6 +1424,124 @@ def jy_src_of(sid):
         if a in JY_SRC_NAME:
             return a, b
     return "gqb", s
+
+
+def _jy_mmss_secs(txt):
+    """'04:16' / '4:16' / '1:04:16' → 秒；认不出来返回 0。
+
+    源A详情页 appData 的 mp3_duration 就是这个格式（2026-11 实测
+    "04:16" = 256 秒，跟源B的 255/256 对得上）。
+    """
+    t = (txt or "").strip()
+    if not t:
+        return 0
+    try:
+        parts = [int(p) for p in t.split(":")]
+    except (TypeError, ValueError):
+        return 0
+    if not parts or any(p < 0 for p in parts):
+        return 0
+    secs = 0
+    for p in parts:
+        secs = secs * 60 + p
+    return secs
+
+
+def _jy_dur_secs(v):
+    """缓存里的 dur → 秒。wy/kw 存的是 int 秒，gqb 详情页存的是 'mm:ss' 字符串。
+
+    不管喂进来什么脏东西都返回 int，绝不抛 —— 点歌路径上不能因为一个时长字段 500。
+    """
+    if v is None or isinstance(v, bool):
+        return 0
+    if isinstance(v, (int, float)):
+        return int(v) if v > 0 else 0
+    t = str(v).strip()
+    if ":" in t:
+        return _jy_mmss_secs(t)
+    if not t:
+        return 0
+    try:
+        return int(float(t))
+    except (TypeError, ValueError):
+        return 0
+
+
+def jy_src_dur(sid):
+    """反查这首歌的真实时长（秒），三级递减，查不到返回 0。
+
+    一级 · 按 id 精确命中：扫 _jy_src_cache 找 rec["id"] == sid 的记录取 dur。
+        跟 jy_src_lookup 同源。wy / kw 源的记录带真实时长，命中就直接用。
+
+    二级 · 源A详情页缓存（"gqb_dur", mid）：
+        gqb 源的搜索页 HTML 里没有时长字段（实测全页 0 处 duration/时长），
+        但详情页 /music/<mid> 的 appData 里有 mp3_duration。jy_gqb_url() 本来
+        就要抓这个页面（取 play_id），顺手把时长存进缓存 —— 零额外请求。
+        stream 分支里 jy_resolve() 跑在 jy_src_dur() 之前，所以到这一步时
+        详情页通常已经抓过了。
+
+    三级 · 跨源兜底：gqb 记录本身 dur 恒 0，而 jy_search_all 是三源拿同一个
+        关键词并发搜、结果全在同一份缓存里，所以缓存里通常同时躺着同一首歌的
+        wy / kw 记录（带真实时长）。按 jy_norm 归一化后的**歌名 + 歌手严格相等**
+        去借；两个字段都要完全相等才认，不用 jy_score / 不用包含匹配 —— 这是
+        为了不把《孤勇者 萧忆情Alex》的时长借给《孤勇者 陈奕迅》。歌手为空的
+        一律不兜底（同名不同歌风险太大）。多个候选取中位数：wy 和 kw 对同一首歌
+        偶尔差 1~3 秒，取第一个会有随机性。
+
+    三级都拿不到（缓存过期 / 服务刚重启 / 源本身没有）就返回 0，前端有降级：
+    不显示总长、进度条按已播时间渐近、切歌靠设备回报的播放结束事件。
+    全程不发任何网络请求。
+    """
+    # ---- 一级：按 id 精确命中 ----
+    for v in _jy_src_cache.values():
+        lst = v[1]
+        if isinstance(lst, list):
+            for rec in lst:
+                if isinstance(rec, dict) and rec.get("id") == sid:
+                    d = _jy_dur_secs(rec.get("dur"))
+                    if d > 0:
+                        return d
+
+    # ---- 二级：源A详情页缓存（jy_gqb_url 顺手存的） ----
+    src, key = jy_src_of(sid)
+    if src == "gqb":
+        for k in (key, sid):
+            d = _jy_dur_secs(_jy_cache_get(("gqb_dur", k)))
+            if d > 0:
+                return d
+
+    # ---- 三级：跨源兜底，归一化后歌名 + 歌手严格相等 ----
+    song, artist = jy_src_lookup(sid)
+    if not song or not artist:
+        return 0
+    ns, na = jy_norm(song), jy_norm(artist)
+    if not ns or not na:
+        return 0
+    durs = []
+    for v in _jy_src_cache.values():
+        lst = v[1]
+        if not isinstance(lst, list):
+            continue
+        for rec in lst:
+            if not isinstance(rec, dict):
+                continue
+            if jy_norm(rec.get("song")) != ns or jy_norm(rec.get("artist")) != na:
+                continue
+            # jy_norm 会把括号里的内容抹掉（《孤勇者（片段）》→《孤勇者》），
+            # 所以光靠严格相等仍会把 90 秒的片段版借给 255 秒的原唱。用项目里
+            # 现成的 jy_isjunk 堵掉：候选是 片段/伴奏/翻唱/… 而目标不是，就不借
+            # （跟 jy_search_all 对 kw 源的处理一致）。这一层只是加严，不是模糊匹配。
+            if jy_isjunk(rec.get("song")) and not jy_isjunk(song):
+                continue
+            d = _jy_dur_secs(rec.get("dur"))
+            if d > 0:
+                durs.append(d)
+    if not durs:
+        return 0
+    durs.sort()
+    n = len(durs)
+    # 奇数取正中；偶数取中间两个的整除均值（不引入浮点，保证确定可复现）
+    return durs[n // 2] if n % 2 else (durs[n // 2 - 1] + durs[n // 2]) // 2
 
 
 # ---------------------------------------------------------------- 源A
@@ -6494,6 +6960,44 @@ def _local_tag_order(rows, tags):
     return hit + neu + bad
 
 
+# ==jy_card_proof== 逐首主题校对（v4.30）：歌单卡里的歌必须真贴合主题
+# 不贴的（靠标签词混进来的、曲风明显矛盾的）直接剔掉；校完不足 3 首的整卡丢，
+# 别留一张「主题歌单」里塞两首跑题歌的残缺卡。derive 卡是「今日/新发现」这类
+# 混合清单，本来就不该有单一主题，不校。
+_SCENE_CALM = ("睡前", "专注", "治愈", "独处")   # 该静的卡：电子/摇滚/说唱/嘻哈明显跑题
+_SCENE_ENER = ("运动",)                          # 该动的卡：纯音乐/古典/民谣明显跑题
+
+
+def _card_song_fits(c, key):
+    """逐首主题校对：c 该不该留在 key 这张卡里。"""
+    if not isinstance(c, dict):
+        return False
+    if key.startswith("derive:"):
+        return True
+    if key.startswith("genre:"):
+        return (c.get("genre") or "") == key.split(":", 1)[1]
+    if key.startswith("lang:"):
+        lg = key.split(":", 1)[1]
+        return _lang_of(c) == _LANG_ALIAS.get(lg, lg)
+    if key.startswith("artist:"):
+        return _norm_key(c.get("artist") or "") == key.split(":", 1)[1]
+    if key.startswith("scene:"):
+        s = key.split(":", 1)[1]
+        h = _THEME_SCENE.get(s)
+        if not h:
+            return True
+        if not _theme_match(c, h["genres"], h["kw"]):
+            return False
+        g = (c.get("genre") or "").strip()
+        if g:
+            if s in _SCENE_CALM and g in _ENERGETIC_GENRES:
+                return False
+            if s in _SCENE_ENER and g in ("纯音乐", "古典", "民谣"):
+                return False
+        return True
+    return True
+
+
 def build_themed_playlists(pool, local_rows, prof=None, daily_seed="", want=12, tags=None):
     """从候选池产出主题歌单卡（默认最多 12 张）。返回 [{key,title,desc,songs:[...]}]。
 
@@ -6684,8 +7188,10 @@ def build_themed_playlists(pool, local_rows, prof=None, daily_seed="", want=12, 
             ranked = mmr_rerank(rows2, lambda_=0.6, daily_seed=daily_seed, limit=12,
                                 max_per_artist=2, max_per_genre=3)
         ranked = _dedupe_titles(ranked, 10)
+        # ==jy_card_proof== 逐首主题校对：把跑题的歌剔出本卡
+        ranked = [c for c in ranked if _card_song_fits(c, key)]
         songs = [_strip_priv(c) for c in ranked]
-        if songs:
+        if len(songs) >= 3:
             out.append({"key": key, "title": title, "name": name,
                         "desc": desc or "", "songs": songs})
     # 左栏是 2 列网格：奇数张会在最后一行留一张孤卡（右边空一块），砍到偶数。
@@ -7975,6 +8481,12 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
     log("REC timing: TOTAL=%.2fs online=%d local=%d tags=%s"
         % (time.time() - rec_t0, len(out["online"]), len(out["local"]),
            ",".join(tags) or "-"))
+    # JY-PLCACHE：推荐/歌单一出就后台预取（音频+封面+歌词），播放时走本地零缓冲。
+    # 非阻塞：prefetch_playlist_cache 自己起 daemon 线程，不拖慢这次响应。
+    try:
+        prefetch_playlist_cache(out)
+    except Exception as e:
+        log("pl prefetch schedule fail %r" % (e,))
     return out
 
 
@@ -9813,6 +10325,7 @@ def main():
     threading.Thread(target=_tvf_boot, daemon=True).start()        # 还原上次残留的电视静音
     threading.Thread(target=axis_worker, daemon=True).start()      # JY-AXIS 组播轴自动重锚
     threading.Thread(target=_wavcache_boot, daemon=True).start()   # JY-WAVCACHE 开机补扫一次
+    threading.Thread(target=_plcache_boot, daemon=True).start()    # JY-PLCACHE 开机补扫一次
     srv.serve_forever()
 
 
