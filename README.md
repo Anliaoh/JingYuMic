@@ -197,9 +197,16 @@ Get-FileHash .\JingYuMic-App-3.26.apk -Algorithm SHA256
 **不提供构建支持。** 下面只是说明现状，不构成帮助承诺：
 
 - `web/` 与 `pc-client/` 是纯静态 + Electron，没有打包流程需要学习
-- **PC 客户端**：`cd pc-client && npm install && npm start` 即可跑；要像 Release 里那样打成便携版，
-  用 `npx @electron/packager . JingYuMic-PC --platform=win32 --arch=x64 --icon=icon.ico`。
-  `electron` 在 `devDependencies` 里，打包时不会被打进 `app.asar`。
+- **PC 客户端**：`cd pc-client && npm install && npm start` 即可跑。
+  - 打 Windows 安装包：`npm run build:win`。`package.json` 里已写好完整的 `build` 段
+    （electron-builder，NSIS x64，产物在 `dist/鲸屿Mic-PC-Setup-<version>.exe`）。
+    `build.electronDist` 指向 `node_modules/electron/dist`，省掉一次 158 MB 的重复下载；
+    若 `npm i` 的 postinstall 被跳过导致该目录不存在，手动解 `electron-v<ver>-win32-x64.zip` 进去即可。
+  - 只想要免安装的便携版，仍可用
+    `npx @electron/packager . JingYuMic-PC --platform=win32 --arch=x64 --icon=icon.ico`。
+  - `electron` 在 `devDependencies` 里，不会被打进 `app.asar`（`build.files` 是白名单）。
+  - ⚠️ `electron` 的版本请保持**精确值** `45.0.0`。写成 `^45.0.0` 会解析到 45.2.x，
+    与 release 包里那个运行时不一致。
 - `android/build.sh` 是作者自用的脚本，依赖本机 SDK 路径；脚本会在缺证书时自动生成一个**调试用**证书，正式发布请换成你自己的
 - `server/server.py` 直接 `python3 server.py` 运行，无第三方依赖清单
 
