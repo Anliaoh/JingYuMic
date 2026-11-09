@@ -1,7 +1,7 @@
 // 鲸屿Mic PC 客户端 —— Electron 主进程
 // 启动后自动扫描局域网内的平板服务(58090)，加载 QQ 音乐风格界面；
 // 找不到时显示连接页，可手动填 IP。
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification } = require("electron");
 const { execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -118,6 +118,52 @@ function resetAppIcon() {
     try { if (tray && !tray.isDestroyed()) tray.setImage(img); } catch (e) {}
   }
   setLnkIcon(null);
+}
+
+/* ---------------- 托盘提示通知（v4.43：修「通知图标发糊」） ----------------
+   原来用 tray.displayBalloon()，它底层是 Windows 的 Shell_NotifyIcon(NIF_INFO)，
+   这个老接口**没有独立图标字段**，系统只能拿托盘那一枚 HICON（16~32px）来显示。
+   Win11 把老气球渲染成通知卡片后，左侧 app logo 位要 44px 逻辑尺寸（高缩放屏
+   要 60px 往上），32px 的图被拉大 → 糊成一片。
+   改成 Notification（Windows toast）：它支持 appLogoOverride，可以把 ico 里
+   256 那一档（单独存成 icon256.png）作为源图交给系统缩小显示。 */
+function noticeIcon() {
+  try {                                   // ① 用户自定义图标优先
+    const cp = customIconPng();
+    if (fs.existsSync(cp)) {
+      const ci = nativeImage.createFromPath(cp);
+      if (!ci.isEmpty()) {
+        const s = ci.getSize();
+        return (s.width >= 256 && s.height >= 256) ? ci
+          : ci.resize({ width: 256, height: 256, quality: "best" });
+      }
+    }
+  } catch (e) {}
+  try {                                   // ② 默认：ico 的 256 档
+    const big = nativeImage.createFromPath(path.join(__dirname, "icon256.png"));
+    if (!big.isEmpty()) return big;
+  } catch (e) {}
+  try { return nativeImage.createFromPath(path.join(__dirname, "icon.ico")); } catch (e) {}
+  return undefined;
+}
+let lastNotice = null;                    // 必须持有引用，否则被 GC 后 toast 会消失
+function notifyToTray() {
+  const title = "鲸屿Mic 仍在运行";
+  const body = "已最小化到右下角托盘。点托盘图标可重新打开，右键托盘可退出。";
+  try {
+    if (Notification.isSupported()) {
+      lastNotice = new Notification({ title: title, body: body, icon: noticeIcon() });
+      lastNotice.on("click", () => {
+        try { if (win && !win.isDestroyed()) { win.show(); win.focus(); win.setSkipTaskbar(false); } } catch (e) {}
+      });
+      lastNotice.on("close", () => { lastNotice = null; });
+      lastNotice.show();
+      return;
+    }
+  } catch (e) {
+    console.log("[jy] toast 不可用，退回托盘气球：", e && e.message);
+  }
+  try { tray.displayBalloon({ title: title, content: body }); } catch (e) {}
 }
 
 function localIP() {
@@ -269,12 +315,7 @@ function createWindow() {
     try { win.setSkipTaskbar(true); } catch (err) {}
     if (!booted) {
       booted = true;
-      try {
-        tray.displayBalloon({
-          title: "鲸屿Mic 仍在运行",
-          content: "已最小化到右下角托盘。点托盘图标可重新打开，右键托盘可退出。",
-        });
-      } catch (err) {}
+      notifyToTray();
     }
   });
 
