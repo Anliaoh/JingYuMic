@@ -194,7 +194,7 @@ function tabletURL(ip) {
   //   真出声才起跑），同样是 js 变了，必须 bump。
   // 语音关闭复播修复：189→190。remote/pc 两端补「设备停+软件标志也停=外部显式停止」分支，
   //   js 变了，必须 bump（PC 端 clearCache 已兜底，但按铁律同步戳）。
-  return "http://" + ip + ":" + PORT + "/static/pc.html?v=194&cv=" + encodeURIComponent(app.getVersion());
+  return "http://" + ip + ":" + PORT + "/static/pc.html?v=195&cv=" + encodeURIComponent(app.getVersion());
 }
 
 /* v3.96：加载平板页面之前先清掉 HTTP 缓存。

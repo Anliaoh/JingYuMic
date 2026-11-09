@@ -7848,13 +7848,12 @@ function qrPoll(){
         setTimeout(function(){ qrClose(); location.reload(); }, 1200);
       }
     }).catch(function(){});
-    /* 扫完到设备上线之间要重启一次 xiaomusic 才会加载新 token */
-    if(n === 4 && !qrRestarted){
-      qrRestarted = true;
-      $("qrTip").textContent = "已收到登录，正在重启音频服务…";
-      fetch(MM + "/api/box_sync", { method: "POST",
-        headers: { "Content-Type": "application/json" }, body: "{}" }).catch(function(){});
-    }
+    /* 这里**不再**「第 4 拍盲重启音频服务」。两个原因：
+       ① 服务端已改成扫码成功后进程内热登录，登录完 /device_list 立刻有设备，
+          下一拍就关面板，根本不需要重启；
+       ② 那次重启会把服务端**正在等扫码结果的长轮询任务一起杀掉** ——
+          二维码还挂在屏幕上（120s 有效），可服务端已经没人接结果了，
+          用户这时候再扫永远没反应。 */
     if(n > 60) clearInterval(qrTimer);
   }, 2000);
 }

@@ -10558,24 +10558,24 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     stopLoginTimers();
     var box = $("qrBox"), img = $("qrImg"), tip = $("logTip"), cnt = $("logCount");
     if(box) box.classList.remove("ready");
-    if(tip) tip.textContent = "正在向请求登录二维码…";
+    if(tip) tip.textContent = "正在向服务器请求登录二维码…";
     if(cnt) cnt.textContent = "";
-    withTimeout(api("/api/get_qrcode"), 20000).then(function(d){
-      if(d && d.already_logged_in){
-        if(tip) tip.textContent = "账号已登录，无需扫码";
-        afterLoginOk(true);
-        return;
-      }
-      if(!d || !d.success || !d.qrcode_url) throw new Error((d && d.message) || "生成失败");
+    /* 改走服务端的 /api/qr_start，不再直连音频后端的 /api/get_qrcode。
+       原因（真机踩过）：直连那个接口只要令牌还能换票就回 already_logged_in，
+       前端显示「账号已登录，无需扫码」并关面板 —— 可这时设备列表往往还是 401，
+       用户被挡在门外，压根拿不到码。qr_start 会在空码时自动改要**强制码**，
+       并且把码在服务端渲染成 PNG（data: URI），不会出现 img.onerror。 */
+    withTimeout(fetch(MM + "/api/qr_start").then(function(r){ return r.json(); }), 30000).then(function(d){
+      if(!d || !d.ok || !d.image) throw new Error((d && d.msg) || "生成失败");
       if(img){
         img.onload = function(){ if(box) box.classList.add("ready"); };
         img.onerror = function(){
           if(tip) tip.textContent = "二维码图片加载失败，请点「刷新二维码」重试";
         };
-        img.src = d.qrcode_url;
+        img.src = d.image;
       }
-      if(tip) tip.textContent = "用手机「家庭」或「家庭」App 扫码，并在手机上点确认";
-      var sec = d.expire_seconds || 120;
+      if(tip) tip.textContent = "用手机「家庭」App 扫码，并在手机上点确认";
+      var sec = d.expires || 120;
       startCountdown(sec);
       pollLogin(sec);
     }).catch(function(e){
@@ -10606,20 +10606,11 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
 
   function pollLogin(sec){
     var deadline = Date.now() + (sec || 120) * 1000;
-    var tickN = 0, synced = false;
     function tick(){
       loginTimer = null;
-      tickN++;
       fetchDevices().then(function(d){
         var list = (d && d.device_list) || [];
         if(list.length > 0){ afterLoginOk(false, list); return; }
-        /* 扫完到设备上线之间必须重启一次 xiaomusic 才会加载新 token */
-        if(tickN === 4 && !synced){
-          synced = true;
-          var tip = $("logTip");
-          if(tip) tip.textContent = "已收到登录，正在重启音频服务…";
-          syncBox();
-        }
         if(Date.now() < deadline) loginTimer = setTimeout(tick, 2500);
       }).catch(function(){
         if(Date.now() < deadline) loginTimer = setTimeout(tick, 3000);
