@@ -373,6 +373,8 @@ body.maxed .winbtns .icoRestore{display:block}
 }
 .acts .tool:hover{background:var(--surf);color:var(--txt)}
 .acts .tool svg{width:14px;height:14px}
+/* v4.40：排序键生效时点亮（跟左侧导航 .nav.on 一个观感，一眼看出列表被排过） */
+.acts .tool.on{background:var(--surf);color:var(--q);font-weight:650}
 
 .vbody{flex:1;min-height:0;overflow-y:auto;padding:0 24px 26px;scrollbar-gutter:stable}
 
@@ -1323,6 +1325,7 @@ body.maxed .winbtns .icoRestore{display:block}
         <button class="bigbtn" id="btnAddAll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="8.4"/><path d="M12 8.4v7.2M8.4 12h7.2"/></svg>添加到队列</button>
         <button class="circ" id="btnMore" title="更多"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></button>
         <span class="sp"></span>
+        <button class="tool" id="btnSort" title="排序：默认" aria-label="排序：默认" data-sort="default"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4.6v14.8"/><path d="M4 16.4 7 19.4l3-3"/><path d="M17 19.4V4.6"/><path d="M14 7.6 17 4.6l3 3"/></svg>排序：默认</button>
         <button class="tool" id="btnRefresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 11a8 8 0 10-2.3 6.3"/><path d="M20 5v6h-6"/></svg>刷新</button>
       </div>
       <div class="vbody" id="libBody"></div>
@@ -1884,7 +1887,7 @@ body.maxed .winbtns .icoRestore{display:block}
     <b>扫码登录账号</b>
     <div class="qrimg" id="qrBox"><div class="qrspin" id="qrSpin"></div><img id="qrImg" alt="登录二维码"></div>
     <div class="qrtip" id="qrTip">正在获取二维码…</div>
-    <div class="qrnote">用手机「家庭」或「家庭」App 扫一扫<br>并在手机上点「确认登录」</div>
+    <div class="qrnote">用手机「家庭」App 扫一扫<br>并在手机上点「确认登录」</div>
     <div class="mrow">
       <button class="mbtn gh" id="qrCancel">关闭</button>
       <button class="mbtn pri" id="qrRefresh">刷新二维码</button>
@@ -1973,7 +1976,9 @@ function esc(s){ return String(s||"").replace(/[&<>"']/g, function(c){
 var MM = location.protocol + "//" + location.hostname + ":58091";
 /* 全站唯一的版本号来源。页面上任何一处显示版本都从这里读，
    不许再手写第二个字面量 —— 手写的版本号一定会被忘（历史上已经出过两次：
-   侧栏那行停在 v3.29 被当 bug 报，之后手动刷成 v3.92，然后又被忘了）。 */
+   侧栏那行停在 v3.29 被当 bug 报，之后手动刷成 v3.92，然后又被忘了）。
+   ★ 冻在 4.01 不许动：铁律是「两端 PAGE_VER = 服务端 VERSION = 4.01」（00-先看这里.md §105），
+     v4.13…v4.40 只是**轮次标签**，只写在注释与交接文档里，不进这个常量。 */
 var PAGE_VER = "4.01";
 var DID = "";   /* 首次运行请到「设置」里填自己的设备 ID */
 try{ var _d = localStorage.getItem("jy_did"); if(_d) DID = _d; }catch(e){}
@@ -2116,6 +2121,7 @@ var baseOffset = 0, baseDur = 0, baseTs = 0;
 var AVDEF = 0;
 var AVLAG = AVDEF;      // 全局默认：服务端为准，服务端没设过就用出厂值
 var LRCAJ = {};         // 逐行歌词微调：歌曲名 -> {行key: 偏移秒}（行key=JSON([基准秒, 规范化文本])）
+                        // 保留键 "*" = 整首偏移（秒），正=歌词往后推，负=往前挪
 var lrcBaseT = [];      // 与 lrcLines 对齐的基准时间戳（应用偏移前），用于反推行 key
 var LRCADJ_REV = 0;
 var AVFOR = {};         // 按歌记录：{歌名: 秒数}，同样是服务端的镜像
@@ -2305,7 +2311,7 @@ var devPosSec = -1;      // 设备报的真实进度（秒）
 var devDurSec = 0;
 /* 设备把同一首从「歌尾」绕回「开头」的时刻。本端看到这个「绕回」就该切下一首。
    ⚠ v4.17 实测订正：以前这里写「loop_type=1 = 设备单曲循环 → 复播」，是错的。
-   真机（did=<你的设备ID>）实测：
+   真机（did=0）实测：
      · 页面上切四种模式，/setplayermode 全返回 OK，但设备 loop_type 恒为 1；
      · 一首歌播到尾（274.4s）时，设备自己换成了下一首（203.1s），没有复播。
    也就是说决定「下一首是谁」的是 xiaomusic 自己的软件 play_type
@@ -2457,6 +2463,62 @@ var coverCache = {}, extCover = {};
 var pollSeq = 0;
 var scrubbing = false;
 var libSongs = [];
+/* v4.40：曲库列表三态排序（默认 → 歌名 → 歌手 → 默认）。
+   "default" = /musiclist 原序，一个字节都不动；只有 title/artist 才排。
+   **绝不原地排 libSongs** —— 它是数据源：播放全部/加入队列/上一首下一首都读它，
+   排了就等于把播放顺序也改了。所有渲染点一律拿 libRows() 生成的副本。 */
+var curSort = "default";   // "default" | "title" | "artist"
+try{
+  var _st0 = localStorage.getItem("jy_sort");
+  if(_st0 === "title" || _st0 === "artist" || _st0 === "default") curSort = _st0;
+}catch(e){}
+function sortLabel(k){
+  return k === "title" ? "歌名" : (k === "artist" ? "歌手" : "默认");
+}
+/* 排序用的键：先走 splitName 拿到 {artist,title}（有标签用标签），
+   再把可能残留的前导音轨号剥掉 —— pc 的 splitName 没有剥号逻辑（只有 App 端有），
+   不剥的话「01 Remember」会排到「0」那一堆里，跟用户预期完全不符。 */
+function sortKeyOf(n, byArtist){
+  var sp = splitName(n);
+  var s = byArtist ? (sp.artist || sp.title) : sp.title;
+  return String(s || "").replace(/^\d{1,3}[ \t]+/, "");
+}
+/* 曲库列表要渲染的行：默认原序返回 libSongs 本身（零拷贝、行为与旧版完全一致），
+   排序态才 slice() 出副本再排。 */
+function libRows(){
+  if(curSort === "default") return libSongs;
+  var byArtist = curSort === "artist";
+  return libSongs.slice().sort(function(a, b){
+    return sortKeyOf(a, byArtist).localeCompare(sortKeyOf(b, byArtist), "zh-Hans-CN");
+  });
+}
+function syncSortBtn(){
+  var b = $("btnSort");
+  if(!b) return;
+  b.title = "排序：" + sortLabel(curSort);
+  b.setAttribute("aria-label", "排序：" + sortLabel(curSort));
+  b.setAttribute("data-sort", curSort);
+  b.classList.toggle("on", curSort !== "default");
+  /* 按钮本身带文字（PC 有足够的横向空间），文字和 tooltip 一起同步 */
+  var lab = b.querySelector("span");
+  if(lab) lab.textContent = "排序：" + sortLabel(curSort);
+  else b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4.6v14.8"/><path d="M4 16.4 7 19.4l3-3"/><path d="M17 19.4V4.6"/><path d="M14 7.6 17 4.6l3 3"/></svg>' + "排序：" + sortLabel(curSort);
+}
+function cycleSort(){
+  curSort = curSort === "default" ? "title" : (curSort === "title" ? "artist" : "default");
+  /* 随机模式与排序互斥：随机序是按洗牌渲染的，排序会把它抹平，
+     所以一选排序就退回顺序模式（顺序模式的 key 以 MODES 为准 = "seq"）。 */
+  if(curSort !== "default" && mode === "rnd"){
+    mode = "seq";
+    try{ localStorage.setItem("jy_mode", mode); }catch(e){}
+    renderMode();
+    toast("已切回顺序模式（排序与随机互斥）");
+  }
+  try{ localStorage.setItem("jy_sort", curSort); }catch(e){}
+  syncSortBtn();
+  renderLibTab();
+  toast("列表排序：" + sortLabel(curSort));
+}
 var lrcCache = {};
 var lyricOn = false;
 
@@ -2755,7 +2817,7 @@ function delSong(name){
     if(name === curName && playing){ try{ pcNext(1); }catch(e){} }
     if(VIEW === "library"){
       $("libCount").textContent = libSongs.length + " 首";
-      renderTable("libBody", libSongs, { local:true });
+      renderTable("libBody", libRows(), { local:true });   // v4.40：保持当前排序态
     }else if(VIEW === "pl"){
       $("plCount").textContent = lastPlList.length + " 首";
       renderTable("plBody", lastPlList, { local:true, pl: curPlName });
@@ -3070,7 +3132,7 @@ function doBatchDelete(names){
     SEL.set = {};
     if(VIEW === "library"){
       $("libCount").textContent = libSongs.length + " 首";
-      renderTable("libBody", libSongs, { local:true });
+      renderTable("libBody", libRows(), { local:true });   // v4.40：保持当前排序态
     }else if(VIEW === "pl"){
       $("plCount").textContent = lastPlList.length + " 首";
       renderTable("plBody", lastPlList, { local:true, pl: curPlName });
@@ -3351,6 +3413,7 @@ function streamStart(d, name, myb){
     setTimeout(poll, 900);
   }).catch(function(e){
     if(myb !== boxPlaySeq) return;
+    awaitStart = false;            /* 推流失败：解除冻结，别让进度条永远停在 0:00 */
     surGateAbort();
     toast("推流失败：" + ((e && (e.msg || e.message)) || e));
   });
@@ -3548,7 +3611,7 @@ function startPcItem(item, opt){
       pcSeekTo = -1;
       return true;
     }
-    /* 播放被拒（NotAllowedError = 自动播放策略）时不要让它冒成未捕获的
+    /* v4.23c：播放被拒（NotAllowedError = 自动播放策略）时不要让它冒成未捕获的
        promise rejection —— 外层 load.then 拿不满会整趟作废，界面上还会弹红字。
        歌已经 load 进来了，返回 true 让后续基准/歌名照常推进；用户点一下播放即可出声。 */
     return audio.play().then(function(){ return true; })
@@ -3670,7 +3733,20 @@ function syncQueueIdx(name){
 
 function pcNext(dir, auto){  if(!queue.length) return;
   if(mode === "rnd"){
+    /* v4.41（修 3）：随机模式下必须跟 App 端**同一个语义**。
+       App 的 step() 是「random 取一首；抽到正在放的这首就按方向挪一格，
+       只有队列只剩一首时才允许原地」。这里原来只做了前半句（纯 random），
+       于是同一颗「下一首」在两端行为不一致：App 永远不会原地不动，
+       电脑端有 1/N 的概率把当前这首从头再放一遍（用户听感就是「点了没反应」）。
+       语义对齐后两端一致：随机、且（只要队列里还有别的歌）绝不取当前这首。 */
     queueIdx = Math.floor(Math.random() * queue.length);
+    if(queue.length > 1){
+      var stepDir = (dir === -1) ? -1 : 1;   // 只有明确「上一首」才往回挪，缺省按下一首算
+      var guard = 0;
+      while(queue[queueIdx] && sameSong(queue[queueIdx].name, curName) && guard++ < queue.length){
+        queueIdx = (queueIdx + stepDir + queue.length) % queue.length;
+      }
+    }
   }else{
     queueIdx += dir;
     if(queueIdx >= queue.length){
@@ -4042,6 +4118,19 @@ function poll(){
            交给下面原本的「播完 → 推下一首」走。 */
         var _atEnd = devPosOwned(curName) && devPosAtEnd(_dn);
         if(_dn > 3 && !_atEnd){
+          extPaused = true;
+          nearEndAt = 0; nearEndName = "";     // 不是唱完：歌尾痕迹作废
+        }
+      }else if(boxOn() && devPlay === false && !pm.is_playing && !pcPaused && !extPaused &&
+               !pendLive() && (Date.now() - resumeHoldAt > RESUME_HOLD_MS) &&
+               !(gSwitchAt && Date.now() - gSwitchAt < 3500)){
+        /* JY-语音关闭复播：与 App 端同源。xiaomusic 自己执行 stop() 时把
+           is_playing 也翻成 false，上面那道闸要求 pm.is_playing 为真就认不出
+           这次显式停止；extPaused 不置真，下面 stoppedAtEnd 的
+           `!pm.is_playing && !extPaused` 当场成立 → 自动推进把设备重新点起来。 */
+        var _dns = dur || (curName && durCache[curName]) || baseDur || 0;
+        var _atEndS = devPosOwned(curName) && devPosAtEnd(_dns);
+        if(_dns > 3 && !_atEndS){
           extPaused = true;
           nearEndAt = 0; nearEndName = "";     // 不是唱完：歌尾痕迹作废
         }
@@ -4593,7 +4682,12 @@ function currentOffset(){
        差超过 1.2 秒就以音频自己报的时长为准。 */
     var ad = audio.duration;
     if(isFinite(ad) && ad > 1 && Math.abs(ad - baseDur) > 1.2) baseDur = ad;
-    return audio.currentTime || 0;     // 本来就准，不补 AVLAG
+    /* v4.23（JY-音画同步）：纯 PC（不开音箱）出声时，本机解码时钟也要扣掉
+       这一首手动设的音画补偿 avOf()，否则手动校准在纯 PC 下完全失效
+       （歌词/进度轴永远不按用户调的偏移走）。环绕（pcOn && boxOn）不改：
+       那一路以设备轴为准，补偿已在 device 分支(4506)处理，这里 boxOn 时 _av=0。 */
+    var _av = boxOn() ? 0 : avOf();
+    return Math.max(0, (audio.currentTime || 0) - _av);
   }
   /* 冻结态（点了歌、设备还没真出声）：定格在 baseOffset，不推进。
      进度条与歌词共用本函数，所以两者会一起停住 —— 这就是「播放条和歌词页要同步」。
@@ -4730,13 +4824,34 @@ $("btnPlay").onclick = function(){
       toast("操作失败：" + ((e && (e.msg || e.message)) || e));
     });
 };
+/* v4.40：本端推「下一首 / 上一首」（JY-顺序）。以前音箱出声时，队列没建好就直接发
+   「下一首」口令 —— 那是在**音箱自己那份全库列表**里 +1，落点跟界面上的列表毫无关系
+   （用户实测：01 Remember → 夢限大）。这里统一成本端算：
+     ① 队列里有当前这首 → 把 queueIdx 校正到它，再 pcNext(dir)（顺序由本端决定）；
+     ② 队列还没建（冷启动直接点）→ 先按「当前视图的列表」建队列，再 pcNext(dir)；
+     ③ 当前这首两边都不在 → 返回 false，调用方退回口令（宁可交回设备也别乱跳）。 */
+function pcStepLocal(dir){
+  if(!curName) return false;
+  var i, qi = -1;
+  for(i = 0; i < queue.length; i++){
+    if(queue[i] && sameSong(queue[i].name, curName)){ qi = i; break; }
+  }
+  if(qi >= 0){ queueIdx = qi; pcNext(dir); return true; }
+  var lst = currentListForQueue(), li = -1;
+  for(i = 0; i < lst.length; i++){
+    if(sameSong(lst[i] && (lst[i].name || lst[i].title), curName)){ li = i; break; }
+  }
+  if(li >= 0){ buildQueueFrom(lst, li); pcNext(dir); return true; }
+  return false;
+}
 $("btnNext").onclick = function(){
   if(pcOn()){ pcNext(1); return; }
   /* v4.23：音箱输出时原来发「下一首」语音口令（sendCmd → TTS → 让音箱自己解释），
      实测时灵时不灵：同一个按钮连点三次可能一次都没换歌（真机探针 T4 复现）。
      改成和「电脑自己播」同一套：按本端队列算出下一首，直接 boxPlay 推给音箱。
-     队列还没建好 / 音箱离线时才退回口令。 */
-  if(boxOn() && BOX_ONLINE && queue.length){ pcNext(1); return; }
+     v4.40：队列没建好时也按当前视图列表现建一份（见 pcStepLocal），只有当前歌
+     确实不在任何列表里才退回口令。 */
+  if(boxOn() && BOX_ONLINE && pcStepLocal(1)) return;
   sendCmd("下一首").then(function(){ setTimeout(poll, 900); });
 };
 $("btnPrev").onclick = function(){
@@ -4744,7 +4859,7 @@ $("btnPrev").onclick = function(){
     if(audio && audio.currentTime > 4){ audio.currentTime = 0; gpPublish({ pos: 0 }); return; }
     pcNext(-1); return;
   }
-  if(boxOn() && BOX_ONLINE && queue.length){ pcNext(-1); return; }   // v4.23：同上，别再靠口令
+  if(boxOn() && BOX_ONLINE && pcStepLocal(-1)) return;   // v4.40：同上，别再靠口令
   sendCmd("上一首").then(function(){ setTimeout(poll, 900); });
 };
 $("btnMode").onclick = function(){
@@ -4995,9 +5110,10 @@ $("vpico").onclick = function(){ toggleMutePc(); };
     var didLocal = false;
     if(pcOn() && audio && audio.src){ audio.currentTime = sec; didLocal = true; }
     if(boxOn() && BOX_ONLINE){
-      /* 别再无脑 toast「已跳到」—— 这台音箱 seek 恒失败，原来拖完会说「已跳到」、
-         实际音箱还在原处，用户以为跳了。等结果再说；已被记住「不支持定位」的设备
-         根本不会发请求，也必须给个说法，否则用户看到的是「拖了没反应」。 */
+      /* v4.23b：别再无脑 toast「已跳到」—— 这台音箱 seek 恒失败，
+         原来拖完会说「已跳到」，实际音箱还在原处，用户以为跳了。等结果再说。
+         已经被记住「不支持定位」的设备根本不会发请求，也必须给个说法，
+         否则用户看到的是「拖了没反应」。 */
       if(BOX_SEEK_DEAD){
         toast(didLocal ? "音箱不支持拖动，已跳电脑" : "这台音箱不支持拖动进度");
       }else{
@@ -5318,6 +5434,10 @@ if($("btnPlPlay")) $("btnPlPlay").onclick = function(){
   if(lastPlList.length) playItem({ name: lastPlList[0] }); else toast("歌单是空的");
 };
 $("btnRefresh").onclick = function(){ loadList(); toast("列表已刷新"); };
+/* v4.40：曲库三态排序按钮（三态循环 + jy_sort 持久化）。启动即回显存下来的状态，
+   免得按钮写「默认」而列表其实排过序。 */
+if($("btnSort")) $("btnSort").onclick = cycleSort;
+syncSortBtn();
 /* ---- 定位：把当前视图滚到正在播放那一行 ---- */
 function locateCurrent(){
   var nm = (curName || "").trim();
@@ -6883,7 +7003,10 @@ function lrcChant(s){
 /* v3.99 · 中文行占比（中文行 / 中文行+外文行）。咏唱白名单只在「这首歌基本是中文」时生效：
    外文双语歌词的体裁就是一行原文一行译文，中文占比总在 0.5 上下，那里面
    "Oh oh oh" 是真原文行、后面那行中文就是它的译文，拆了等于毁掉翻译。
-   实测：5 处误判目标 0.865~0.912，全库 148 首外文/双语反例 0.000~0.496 → 门槛 0.75。 */
+   实测：5 处误判目标 0.865~0.912，全库 148 首外文/双语反例 0.000~0.496。
+   v4.36 门槛 0.75 → 0.65：「Pauu - 东京不太热（Cover V.A.）」中文占比 0.742，
+   差 0.008 就被当成外文歌，NaYo/Ayo 哼唱没被白名单挡住，19 行中文被配成译文。
+   0.65 距反例上限 0.496 仍留 0.15 余量。 */
 function lrcZhRatio(lines){
   var zh = 0, fo = 0;
   for(var i = 0; i < lines.length; i++){
@@ -6916,7 +7039,8 @@ function lrcGroups(lines){
   lines[0].gi = 0; lines[0].tr = false;
   var songZh = lrcBaseZh(lines);          // v3.95：整首基线先判一次，下面每行都要用
   /* v3.99 · 咏唱白名单只对「基本是中文」的歌生效（判据见 lrcZhRatio 上方注释） */
-  var chantOK = songZh && lrcZhRatio(lines) >= 0.75;
+  /* v4.36：0.75 卡掉了中文占比 0.742 的《东京不太热》，见上方注释 */
+  var chantOK = songZh && lrcZhRatio(lines) >= 0.65;
   var g = 0;
   for(var i=1;i<lines.length;i++){
     var cur = lines[i], prev = lines[i-1];
@@ -6951,7 +7075,7 @@ function lrcGroups(lines){
     var nextOk = !next || lrcLang(next.s) !== "zh" || Math.abs(next.t - cur.t) <= 0.5 || Math.abs(prev.t - cur.t) <= 0.5;
     /* 相邻双语对（用户粘贴 / 双语 LRC 常见：原文紧跟译文）：按行序认、放宽时间窗，
        否则译文时间戳若跟下一句原文一致、或整体偏了几秒，就会落单、不跟原文同组高亮。 */
-    var trCand = !prev.tr && prevForeign && pwOk && (cl === "zh" || lrcTransLikely(cur.s)) &&
+    var trCand = !prev.tr && prevForeign && pwOk && (cl === "zh" || cl === "mix" || lrcTransLikely(cur.s)) &&
                  !lrcMeta(ps) && !lrcMeta(cur.s);
     if(trCand && nextOk){
       cur.tr = true; cur.gi = prev.gi;                          // 依附上一行，同一组
@@ -6959,7 +7083,39 @@ function lrcGroups(lines){
       cur.tr = false; cur.gi = ++g;
     }
   }
-  return lines;
+  /* v4.23（JY-双语对齐）：源B tlyric 常有「两行原文 → 一行合并译文」的粒度错位
+     （如日文 couplet 两句共用一句中文译文）。上面分组只把译文贴到紧邻的上一句原文，
+     导致第二句原文独自成组、没有译文 —— 播到那句时译文飘在上一句下面，看着就是
+     「原文和译文没对应」。补一道：凡是没有译文傍身的原文行，把时间上最近的译文
+     （≤8s）复制一份、用本行时间戳、并入本行同组，保证每一句当前原文都带着自己的译文
+     一起高亮。1:1 正常的歌不会触发（组里已有译文）。 */
+  var _hasTr = {};
+  for(var _i=0;_i<lines.length;_i++){ if(lines[_i].tr) _hasTr[lines[_i].gi] = true; }
+  var _out = [];
+  for(var _i=0;_i<lines.length;_i++){
+    var _c = lines[_i];
+    _out.push(_c);
+    if(!_c.tr && !_hasTr[_c.gi]){
+      var _adjUnc = false;
+      if(_i>0 && !lines[_i-1].tr && !_hasTr[lines[_i-1].gi]) _adjUnc = true;
+      if(_i<lines.length-1 && !lines[_i+1].tr && !_hasTr[lines[_i+1].gi]) _adjUnc = true;
+      if(_adjUnc) continue;
+      var _best = null, _bd = 1e9;
+      for(var _j=0;_j<lines.length;_j++){
+        if(lines[_j].tr){
+          var _dt = Math.abs((lines[_j].t||0) - (_c.t||0));
+          if(_dt < _bd && _dt <= 8){ _bd = _dt; _best = lines[_j]; }
+        }
+      }
+      if(_best){
+        var _dup = {}; for(var _k in _best) _dup[_k] = _best[_k];
+        _dup.t = _c.t; _dup.gi = _c.gi; _dup.tr = true;
+        _out.push(_dup);
+        _hasTr[_c.gi] = true;
+      }
+    }
+  }
+  return _out;
 }
 /* 取出与第 i 行同组的行区间 [首, 尾] */
 function lrcGroupRange(i){
@@ -7324,10 +7480,8 @@ function fetchLrcAdj(name){
 function applyLrcAdj(baseLines, name){
   lrcBaseT = [];
   var adj = LRCAJ[name] || {};
-  /* 整首偏移用保留键 "*"（值=秒，正数=歌词往后推）。它跟逐行偏移是两个独立量：
-     每行生效时间 = 基准秒 + 本行偏移 + 整首偏移。
-     lrcBaseT 一律存「任何偏移前」的基准秒 —— 行 key 靠它算，存了偏移后的值
-     就会越调越偏（第二次微调的 key 和第一次对不上，旧值永远删不掉）。 */
+  /* 整首偏移走保留键 "*"（秒）。注意 lrcBaseT 一律存「应用任何偏移前」的 bt ——
+     逐行微调的 key 由它算出，动了 key 就会漂，重复微调会越偏越多。 */
   var goff = parseFloat(adj["*"]) || 0;
   return (baseLines || []).map(function(ln, i){
     var bt = ln.t; lrcBaseT[i] = bt;
@@ -7335,7 +7489,8 @@ function applyLrcAdj(baseLines, name){
     var d = parseFloat(adj[k]) || 0;
     /* 一律返回新对象，绝不把 ln 原样交出去：baseLines 就是 lrcCache 里那批行，
        lrcAdjWholeNudge / lrcAdjNudge 会就地改 .t，交引用等于连「基准时间」一起改了 ——
-       切歌回来再按基准算一遍，偏移就叠两倍。没有偏移时 t 保持原值。 */
+       切歌回来再按基准算一遍偏移就叠两倍，行 key 也跟着漂，复位永远对不上。
+       remote.html 早就是这个写法，pc.html 漏了。 */
     return { t: (d || goff) ? Math.max(0, bt + d + goff) : bt,
              s: ln.s, gi: ln.gi, tr: ln.tr };
   });
@@ -7356,8 +7511,13 @@ function lrcAdjNudge(idx, step){
   var key = lrcadjKey(bt, l.s);
   LRCAJ[name] = LRCAJ[name] || {};
   var cur = parseFloat(LRCAJ[name][key]) || 0;
+  /* step === 0 是「复位」按钮的本意：这一句回到原时间，不是「加 0 秒」。
+     写成 cur + 0 = cur 的话点复位等于原值写回，按钮完全无效（实测 -0.5 后复位仍 -0.5）。 */
   var nd = (step === 0) ? 0
     : Math.max(-10, Math.min(10, Math.round((cur + step) * 100) / 100));
+  /* 必须显式写 0，不能 delete：服务端 lrcadj_write 是按 payload 里「出现过」的键
+     逐个 merge 的，本地删掉键后推上去的 dict 根本不含这个键，服务端就不知道要删，
+     磁盘上旧值一直在 —— 界面归零了、重载就复活。送 0 才会被 pop 掉。 */
   LRCAJ[name][key] = nd;
   /* 逐行微调必须叠加整首偏移：否则整首挪 -4.5 之后点一下本行，
      这一行会被写回「只有本行偏移」的位置，两句之间直接打架。 */
@@ -7367,16 +7527,16 @@ function lrcAdjNudge(idx, step){
   lrcAdjPush(name);
   var curEl = $("repAdjCur");
   if(curEl) curEl.textContent = (nd > 0 ? "+" : "") + nd.toFixed(2) + "s";
-  lrcAdjWholeShow();
   /* v3.101：面板点完不关，顶上那行「歌名 · 时间」也得跟着走 —— 否则
      用户看到「当前偏移 +0.50s」上面还挂着旧时间，像是没生效。 */
   var whereEl = $("repFor");
   if(whereEl) whereEl.textContent =
-    (splitName(curName).title || curName || "—") + " · " + fmt(lrcLines[idx].t);
+    (splitName(curName).title || curName || "—") + " · " + fmt(l.t);
 }
 
 /* ---- 整首歌词偏移（保留键 "*"，单位秒；正=歌词往后推，负=往前挪）----
-   按歌记忆（存平板那套 lrcadj 里，一个键，服务端无需改动），点完立即生效。 */
+   按歌记忆（存平板那套 lrcadj 里，一个键，服务端无需改动），点完立即生效：
+   把增量直接拍到 lrcLines 的每一行上，再重画高亮。 */
 function lrcAdjWholeCur(){
   /* 当前整首偏移（秒）：没有就是 0 */
   return parseFloat((LRCAJ[curName] || {})["*"]) || 0;
@@ -7393,20 +7553,24 @@ function lrcAdjWholeNudge(step){
   LRCAJ[name] = LRCAJ[name] || {};
   var cur = parseFloat(LRCAJ[name]["*"]) || 0;
   var nv = Math.max(-10, Math.min(10, Math.round((cur + step) * 100) / 100));
+  /* 归零同样要显式存 0（理由见 lrcAdjNudge）：delete 之后再推一个不含 '*' 的
+     dict，服务端 merge 只增不删，磁盘上还是旧值，重载即复活。 */
   LRCAJ[name]["*"] = nv;
-  var ad = LRCAJ[name] || {};
-  for(var i = 0; i < lrcLines.length; i++){
-    var li = lrcLines[i];
-    if(!li) continue;
-    /* 时间一律用「基准秒 + 本行偏移 + 新整首值」重算，不做 li.t + delta：
-       整首往负方向调时，前奏附近时间很短的行会被夹到 0（不为负是硬要求），
-       之后再点「归零」就永久回不到原位了。用基准秒重算，夹只影响当下显示。 */
-    var b = (i < lrcBaseT.length && lrcBaseT[i] != null) ? lrcBaseT[i] : null;
-    if(b == null){ li.t = Math.max(0, (li.t || 0) + (nv - cur)); continue; }
-    var kk = lrcadjKey(b, li.s);
-    li.t = Math.max(0, b + (parseFloat(ad[kk]) || 0) + nv);
+  var delta = nv - cur;
+  if(delta){
+    var adjNow = LRCAJ[name] || {};
+    for(var i = 0; i < lrcLines.length; i++){
+      var li = lrcLines[i];
+      if(!li) continue;
+      /* 必须用基准秒重算，不能在已应用偏移的 li.t 上继续累加：
+         li.t 被 Math.max(0,…) 夹过下限，压到 0 的行再也回不到原位。 */
+      var bt2 = (i < lrcBaseT.length && lrcBaseT[i] != null) ? lrcBaseT[i] : li.t;
+      var k2 = lrcadjKey(bt2, li.s);
+      var d2 = parseFloat(adjNow[k2]) || 0;
+      li.t = Math.max(0, bt2 + d2 + nv);
+    }
+    paintLyric(true);
   }
-  paintLyric(true);
   lrcAdjPush(name);
   lrcAdjWholeShow();
   /* 面板顶上的「歌名 · 时间」也跟着走，否则看着像没生效 */
@@ -7848,12 +8012,12 @@ function qrPoll(){
         setTimeout(function(){ qrClose(); location.reload(); }, 1200);
       }
     }).catch(function(){});
-    /* 这里**不再**「第 4 拍盲重启音频服务」。两个原因：
-       ① 服务端已改成扫码成功后进程内热登录，登录完 /device_list 立刻有设备，
-          下一拍就关面板，根本不需要重启；
+    /* v4.41：这里**不再**「第 4 拍盲重启音频服务」。两个原因：
+       ① 服务端已经改成扫码成功后进程内热登录（_patch_xqrhot），登录完
+          /device_list 立刻有设备，下一拍就关面板，根本不需要重启；
        ② 那次重启会把服务端**正在等扫码结果的长轮询任务一起杀掉** ——
           二维码还挂在屏幕上（120s 有效），可服务端已经没人接结果了，
-          用户这时候再扫永远没反应。 */
+          用户这时候再扫永远没反应。这是「扫了没反应」的一个真实来源。 */
     if(n > 60) clearInterval(qrTimer);
   }, 2000);
 }
@@ -8200,7 +8364,7 @@ function fillAbout(){
     abSet("abRowAcct", "abAcct", "acct", t, !!(d && d.valid));
   }).catch(function(){ abSet("abRowAcct", "abAcct", "acct", "未知", false); });
   var cc = $("abCmd");
-  if(cc) cc.textContent = 'ssh -p 8022 用户名@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
+  if(cc) cc.textContent = 'ssh -p 8022 u0_a000@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
   var out = $("abOut");
   if(out) out.style.display = "none";
 }
@@ -8854,7 +9018,13 @@ function markBoxSeekDead(){
 function boxSeek(sec){
   if(BOX_SEEK_DEAD) return Promise.resolve(null);
   return api("/seek?did=" + encodeURIComponent(DID) + "&sec=" + Number(sec).toFixed(2))
-    .then(function(d){ if(!d || d.ret !== "OK") markBoxSeekDead(); return d; })
+    .then(function(d){
+      /* v4.23b：/seek 的失败信号是 ret:"ERR" + code（设备侧 -704220008 = 不支持定位），
+         **根本没有 ok 字段**。原来判 `d.ok === false` 永远不成立 → markBoxSeekDead()
+         一次都没执行过，BOX_SEEK_DEAD 形同虚设，每拖一次就白发一条注定失败的请求。 */
+      if(!d || d.ret !== "OK") markBoxSeekDead();
+      return d;
+    })
     .catch(function(){ markBoxSeekDead(); return null; });
 }
 
@@ -9778,7 +9948,8 @@ function renderLibTab(){
   if(VIEW !== "library") return;
   if(TAB === "all"){
     $("libTitle").textContent = "本地和下载";
-    renderTable("libBody", libSongs, { local: true });
+    /* v4.40：libRows() 在默认态原样返回 libSongs，排序态返回排好的副本 */
+    renderTable("libBody", libRows(), { local: true });
     return;
   }
   var list = TAB === "recent" ? RECENT : likedAll();
@@ -9915,6 +10086,33 @@ window.__sur = {
                              url: STEM.url, key: STEM.key }; },
   part: partOf,
   stemGo: stemGo
+};
+/* v4.41（修 3）：切歌语义的验版钩子。
+   为什么非要它：queue / queueIdx / curName 全是闭包变量，「随机模式下点下一首
+   会不会原地重放当前这首」这件事在 DOM 上一个像素都看不出来 —— 只有直接读
+   queueIdx 才能断言「落到了第几首」。这里**只读 + 一个直调 pcNext**，
+   不改任何行为；和上面的 window.__m / window.__sur 是同一套调试约定。 */
+window.__pc = {
+  get queue(){ return queue.map(function(q){ return q && q.name; }); },
+  get queueIdx(){ return queueIdx; },
+  get mode(){ return mode; },
+  get curName(){ return curName; },
+  get picked(){ var q = queue[queueIdx]; return q ? q.name : ""; },
+  setMode: function(m){ mode = m; renderMode(); return mode; },
+  /* 造「正在放 x 这首、队列就是这几个」的起始态（等价于用户点了队列里第 i 首） */
+  seed: function(names, cur){
+    buildQueueFrom(names || [], -1);
+    for(var i = 0; i < queue.length; i++){
+      if(queue[i] && String(queue[i].name) === String(cur)){ queueIdx = i; break; }
+    }
+    curName = String(cur || "");
+    return { queueIdx: queueIdx, cur: curName };
+  },
+  step: function(dir){
+    pcNext(dir);
+    var q = queue[queueIdx];
+    return { queueIdx: queueIdx, picked: q ? String(q.name) : "" };
+  }
 };
 
 function gpBoot(){

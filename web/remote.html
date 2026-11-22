@@ -863,7 +863,7 @@
   .recsec .srchead{margin-bottom:9px}
   .recwhy{font-size:11px;color:var(--dim);padding:0 2px;line-height:1.7}
 
-  /* ===== 每日推荐 · 源D风（浅色薄荷绿 + 双列歌曲卡） ===== */
+  /* ===== 每日推荐 · 音乐风（浅色薄荷绿 + 双列歌曲卡） ===== */
   #paneRec.rec-mi{
     --mi:var(--strong); --mi-d:var(--txt); --mi-soft:var(--surf2);
     --mi-bg:transparent; --mi-card:var(--surf);
@@ -956,7 +956,7 @@
   .recmi-dl.dl-done:active{transform:none;background:linear-gradient(160deg,#3d4551,#262b33)}
   .recmi-dl.dl-done svg{width:14px;height:14px;stroke-width:2.2}
   @keyframes jyDlSpin{to{transform:rotate(360deg)}}
-  /* 每日推荐 · 主题歌单卡（源D风：薄荷绿横滑卡） */
+  /* 每日推荐 · 主题歌单卡（音乐风：薄荷绿横滑卡） */
   .recmi-pl-sec{margin:14px 0 2px;padding:0 4px}
   .recmi-pl-head{display:flex;align-items:baseline;gap:10px;padding:6px 2px 10px}
   .recmi-pl-head b{font-size:16px;font-weight:800;color:var(--mi-txt)}
@@ -1928,6 +1928,9 @@ body.pad .settwocol{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-it
     <span>搜索</span>
   </button>
   <div class="rgap"></div>
+  <button class="rmini" id="rSort" title="排序：默认" aria-label="排序：默认" data-sort="default">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 4.6v14.8"/><path d="M4 16.4 7 19.4l3-3"/><path d="M17 19.4V4.6"/><path d="M14 7.6 17 4.6l3 3"/></svg>
+  </button>
   <button class="rmini" id="rSetup" title="设置">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="2.6"/><path d="M12 3.4v2.2M12 18.4v2.2M3.4 12h2.2M18.4 12h2.2M5.9 5.9l1.6 1.6M16.5 16.5l1.6 1.6M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6"/></svg>
   </button>
@@ -1950,6 +1953,7 @@ body.pad .settwocol{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-it
   <button class="iconbtn" id="btnSearch" title="搜索下载"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.6"/><path d="M16 16l4.4 4.4"/></svg></button>
   <button class="iconbtn" id="btnTheme" title="切换浅色/深色"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.4"/><path d="M12 2.6v2.4M12 19v2.4M2.6 12H5M19 12h2.4M5.4 5.4l1.7 1.7M16.9 16.9l1.7 1.7M18.6 5.4l-1.7 1.7M7.1 16.9l-1.7 1.7"/></svg></button>
   <button class="iconbtn" id="btnSetup" title="设置"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"/><path d="M12 3.4v2.2M12 18.4v2.2M3.4 12h2.2M18.4 12h2.2M5.9 5.9l1.6 1.6M16.5 16.5l1.6 1.6M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6"/></svg></button>
+  <button class="iconbtn" id="btnSort" title="排序：默认" aria-label="排序：默认" data-sort="default"><svg viewBox="0 0 24 24"><path d="M7 4.6v14.8"/><path d="M4 16.4 7 19.4l3-3"/><path d="M17 19.4V4.6"/><path d="M14 7.6 17 4.6l3 3"/></svg></button>
   <button class="iconbtn" id="btnRefresh" title="刷新列表"><svg viewBox="0 0 24 24"><path d="M20.2 12a8.2 8.2 0 11-2.5-5.9"/><path d="M20.4 4.6v5.2h-5.2"/></svg></button>
 </header>
 
@@ -2543,7 +2547,7 @@ body.pad .settwocol{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-it
         <div class="setcard">
           <div class="setcard-t">服务器地址（一行一个，第一个优先）</div>
           <div class="setcard-s">在家填局域网 IP；在外填 Tailscale 的 100.x 地址或隧道域名（https 也支持）。连不上会自动换下一个。</div>
-          <textarea id="addrBox" spellcheck="false" placeholder="192.168.1.100&#10;100.64.0.1:58090" style="margin-top:10px"></textarea>
+          <textarea id="addrBox" spellcheck="false" placeholder="192.168.1.102&#10;100.64.0.1:58090" style="margin-top:10px"></textarea>
           <div class="lbl" id="curAddr">当前：&#8212;</div>
           <button class="abtn" id="addrSave">保存并重连</button>
         </div>
@@ -3046,7 +3050,9 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
   // MusicMate 服务（封面/歌词/搜索下载）
   var MM = location.protocol + "//" + location.hostname + ":58091";
   /* 全站唯一的版本号来源。页面上任何一处显示版本都从这里读，
-     不许再手写第二个字面量 —— 手写的版本号一定会被忘。 */
+     不许再手写第二个字面量 —— 手写的版本号一定会被忘。
+     ★ 冻在 4.01 不许动：铁律是「两端 PAGE_VER = 服务端 VERSION = 4.01」（见 00-先看这里.md §105），
+       v4.13…v4.40 这些都只是**轮次标签**，只写在注释与交接文档里，不进这个常量。 */
   var PAGE_VER = "4.01";
   // 个性化：默认封面（无专辑图时显示）/ 无歌词文案（本机 localStorage）
   var defCover = "";
@@ -3381,6 +3387,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
         Array.prototype.forEach.call(box.children, function(c){ c.classList.remove("on"); });
         b.classList.add("on");
         $("q").value = "";
+        LAST_UNI = null;          // v4.41：换分类 = 搜索态结束，缓存作废
         $("sbox").classList.remove("has");
         $("onres").style.display = "none";
         applyFilter();
@@ -3393,6 +3400,111 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
   /* 随机模式：把当前分类的显示顺序洗牌（与音箱侧 force_reshuffle 呼应）。
      切模式/切分类才重洗，输入搜索时不洗（过滤本身就有随机感）。 */
   var shuffleOrder = null, shuffleFrom = "";
+
+  /* v4.40：列表排序（三态循环 默认 → 歌名 → 歌手 → 默认）。
+     "default" 就是 /musiclist 的原始顺序，一个字节都不动；只有切到 title/artist
+     才在渲染前对**临时结果**排序（v4.41 起抽成 sortNames，列表和搜索结果共用）。
+     持久化到 jy_sort，刷新后保持。 */
+  var curSort = "default";   // "default" | "title" | "artist"
+  try{
+    var _st = localStorage.getItem("jy_sort");
+    if(_st === "title" || _st === "artist" || _st === "default") curSort = _st;
+  }catch(e){}
+  /* 排序的可读名（按钮 title / toast 共用，避免三处各写一份字面量） */
+  function sortLabel(k){
+    return k === "title" ? "歌名" : (k === "artist" ? "歌手" : "默认");
+  }
+  /* ---- v4.41：排序的**唯一实现**（修 1）----
+     以前比较器只写在 applyFilter() 里，而「搜索框有词」时页面走的是
+     unifiedSearch() → renderUnifiedLocal()，那条路**根本不经过 applyFilter**
+     —— 于是同一个关键词，列表视图排了、搜索结果一条没排（QA 复现：修 1）。
+     现在把比较器抽成 sortNames()，两条渲染路径都调它，一处口径管两处。
+
+     入参两种形状都吃：
+       · 字符串歌名（本地列表 allLists[PLAYLIST] 的元素）
+       · {name, artist} 对象（/api/searchall 的本地命中）
+     **只认 name/文件名**，不额外吃对象的 .artist：同一首歌在列表视图和
+     搜索结果视图必须落在同一个位置，否则用户会觉得两个界面对不上；
+     而列表视图那边只有文件名可用（allLists 是字符串数组），所以两边统一
+     走「文件名 + songMeta」这一套（splitName 已经在读 songMeta）。
+     返回**新数组**，入参一个字节都不动 —— allLists / shuffleOrder /
+     服务端返回结果都不许被就地排序改掉。 */
+  function sortKeyOf(it, byArtist){
+    var raw = (typeof it === "string") ? it
+            : String((it && (it.name || it.title)) || "");
+    var sp = splitName(raw);
+    var s = byArtist ? (sp.artist || sp.title) : sp.title;
+    return String(s == null ? "" : s);
+  }
+  function sortNames(arr, key){
+    var a = arr || [];
+    /* "default" 就是原序：直接还一份副本，连一次比较都不做 */
+    if(key !== "title" && key !== "artist") return a.slice();
+    var byArtist = key === "artist";
+    return a.slice().sort(function(x, y){
+      return sortKeyOf(x, byArtist).localeCompare(sortKeyOf(y, byArtist), "zh-Hans-CN");
+    });
+  }
+  /* 两颗入口：手机竖屏走顶栏 #btnSort，平板横栏（body.pad）走左栏 #rSort，
+     状态必须两处同时同步（启动和点击后都要调）。 */
+  function syncSortBtn(){
+    ["btnSort", "rSort"].forEach(function(id){
+      var b = $(id);
+      if(!b) return;
+      b.title = "排序：" + sortLabel(curSort);
+      b.setAttribute("aria-label", "排序：" + sortLabel(curSort));
+      b.setAttribute("data-sort", curSort);
+      /* 非默认顺序时点亮（.on 是现成的渐变高亮样式），一眼看出「列表被排过」 */
+      b.classList.toggle("on", curSort !== "default");
+    });
+  }
+  /* 三态循环：默认 → 歌名 → 歌手 → 默认 */
+  function cycleSort(){
+    curSort = curSort === "default" ? "title" : (curSort === "title" ? "artist" : "default");
+    /* 随机模式与排序互斥：随机序是按洗牌数组渲染的，排序会把随机感抹掉，
+       所以一选排序就退回顺序模式（mode 的 key 以 MODES 为准，顺序模式是 "seq"）。 */
+    if(curSort !== "default" && mode === "rnd"){
+      mode = "seq"; renderMode(); reshuffleSongs();
+      try{ localStorage.setItem("jy_mode", mode); }catch(e){}
+    }
+    try{ localStorage.setItem("jy_sort", curSort); }catch(e){}
+    syncSortBtn();
+    rerenderForSort();
+    toast("列表排序：" + sortLabel(curSort));
+  }
+
+  /* ---- v4.41：点排序后「重渲染当前正在显示的那个视图」（修 2）----
+     以前的写法是无条件 applyFilter()，它在**搜索态**下会干出这么一件事：
+       applyFilter 用 $("q") 的关键词去过滤 allLists[PLAYLIST]（**只有当前分类**、
+       纯子串匹配），排完写进 #songs —— 直接把 unifiedSearch 渲染好的搜索结果
+       整块替换掉，而底下的在线结果块 #onres 还原样挂着上一次关键词的在线命中。
+     于是一屏上同时存在两套互不相干的查询结果：
+       · 第一套 = 默认列表序（点排序之前）
+       · 第二套 = /api/searchall 的本地命中序（搜索完成时）
+       · 第三套 = 「当前分类子串过滤 + 排序」——既不是列表序、也不是搜索序，
+                  连命中的歌都少了一大截（拼音/模糊命中、跨歌单命中全丢），
+                  还跟下面那半屏在线结果对着不同的查询。
+     QA 看到的「第三套顺序」就是它。它不是症状变来变去，而是**替换**：
+     点几次排序就替换几次，所以必现、且越点越离谱。
+
+     修法：看当前哪个视图在显示，就重渲染哪个视图 ——
+       · 搜索框有词 → 关键词对应的视图就是统一搜索结果，重排它（本地组排序，
+         在线组保持服务端相关度序）；结果缓存还在就原地重排（零请求），
+         缓存没了（比如刚清过）就重搜一次。
+       · 搜索框没词 → 就是普通列表，交给 applyFilter()。
+     （正在搜的时候点排序也不会错位：unifiedSearch 回来时才调 renderUnifiedLocal，
+      那一步读的是当时的 curSort，自然就是新排序。） */
+  function rerenderForSort(){
+    var kw = ($("q").value || "").trim();
+    if(!kw){ applyFilter(); return; }
+    if(LAST_UNI && LAST_UNI.kw === kw){
+      renderUnifiedLocal(LAST_UNI.loc, LAST_UNI.kw);
+      renderUnifiedOnline(LAST_UNI.onl, LAST_UNI.kw);
+      return;
+    }
+    unifiedSearch(kw);
+  }
+
   function reshuffleSongs(){
     if(mode !== "rnd"){ shuffleOrder = null; shuffleFrom = ""; return; }
     var src = allLists[PLAYLIST] || [];
@@ -3415,6 +3527,12 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       if(shuffleOrder) src = shuffleOrder;
     }
     songs = kw ? src.filter(function(n){ return n.toLowerCase().indexOf(kw) >= 0; }) : src.slice();
+    /* v4.40/v4.41：用户在工具栏选了「歌名 / 歌手」就按它排序。
+       只排 songs（本次显示的临时数组），allLists / shuffleOrder 一个都不动 ——
+       排序不该改播放顺序的来源，也不该污染随机模式的洗牌结果。
+       比较器在 sortNames() 里，与搜索结果视图**共用同一份实现**（修 1）；
+       splitName() 会自动剥前导序号，所以「01 Remember」按 R 排，不按 0 排。 */
+    songs = sortNames(songs, curSort);
     renderSongs();
   }
 
@@ -5116,7 +5234,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       .catch(function(e){ return { ret:"ERR", err:e.message }; });
   }
 
-  var _boxSeekDead = false;   // 这台音箱不支持定位（/seek 回 ret:"ERR" code:-704220008），
+  var _boxSeekDead = false;   // v4.23b：这台音箱不支持定位（/seek 回 ret:"ERR" code:-704220008），
                               // 标记后不再反复发无用请求。内存级，刷新页面会重试一次。
   function seekOn(t, sec){
     if(!(sec >= 0)) return;
@@ -5330,6 +5448,10 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     baseDur = durCache[name] || 0;
     playing = opt.playing !== false;
     if(playing) resumeHoldAt = Date.now();   // 刚起播：别让设备还没跟上那两拍把按钮抖回去
+    /* 点歌也是一次「从头起播」：清掉上一首的播完/绕回证据并开 12 秒静默窗。
+       不调的话，等待期里 baseDur 一度会是上一首的总长，若上一首正好在最后 14 秒内，
+       nearEnd → stoppedAtEnd 会在换曲那一拍判成「唱完了」直接推下一首。 */
+    markUserResume();
     endAt = 0;                // 新的一首开始：上一首的「刚播完」解除
     nearEndAt = 0; nearEndName = "";   // 歌尾痕迹也要清：别让旧歌的痕迹误判新歌播完
     updateMeta(name, baseDur);
@@ -5724,7 +5846,10 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
   /* v3.99 · 中文行占比（中文行 / 中文行+外文行）。咏唱白名单只在「这首歌基本是中文」时生效：
      外文双语歌词的体裁就是一行原文一行译文，中文占比总在 0.5 上下，那里面
      "Oh oh oh" 是真原文行、后面那行中文就是它的译文，拆了等于毁掉翻译。
-     实测：5 处误判目标 0.865~0.912，全库 148 首外文/双语反例 0.000~0.496 → 门槛 0.75。 */
+     实测：5 处误判目标 0.865~0.912，全库 148 首外文/双语反例 0.000~0.496。
+   v4.36 门槛 0.75 → 0.65：「Pauu - 东京不太热（Cover V.A.）」中文占比 0.742，
+   差 0.008 就被当成外文歌，NaYo/Ayo 哼唱没被白名单挡住，19 行中文被配成译文
+   （用户报的「没有外语，歌词匹配成翻译了」）。0.65 距反例上限 0.496 仍留 0.15 余量。 */
   function lrcZhRatio(lines){
     var zh = 0, fo = 0;
     for(var i = 0; i < lines.length; i++){
@@ -5766,8 +5891,9 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     lines[0].gi = 0; lines[0].tr = false;
     var songZh = lrcBaseZh(lines);        // v3.95：整首基线先判一次
     /* v3.99 · 咏唱白名单只对「基本是中文」的歌生效（判据见 lrcZhRatio 上方注释） */
-    var chantOK = songZh && lrcZhRatio(lines) >= 0.75;
-    var g = 0;
+  /* v4.36：0.75 卡掉了中文占比 0.742 的《东京不太热》，见上方注释 */
+  var chantOK = songZh && lrcZhRatio(lines) >= 0.65;
+  var g = 0;
     for(var i=1;i<lines.length;i++){
       var cur = lines[i], prev = lines[i-1];
       var ps = String(prev.s || ""), cl = lrcLang(cur.s), pl = lrcLang(ps);
@@ -5795,7 +5921,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
          这里新增的同时间戳条件不成立，仍由原逻辑挡住，不会误伤。 */
       var nextOk = !next || lrcLang(next.s) !== "zh" || Math.abs(next.t - cur.t) <= 0.5 || Math.abs(prev.t - cur.t) <= 0.5;
       /* 相邻双语对：按行序认、放宽时间窗，译文时间戳偏了也能跟原文同组高亮 */
-      var trCand = !prev.tr && prevForeign && (cl === "zh" || lrcTransLikely(cur.s)) && pwOk &&
+      var trCand = !prev.tr && prevForeign && (cl === "zh" || cl === "mix" || lrcTransLikely(cur.s)) && pwOk &&
                    !lrcMeta(ps) && !lrcMeta(cur.s);
       if(trCand && nextOk){
         cur.tr = true; cur.gi = prev.gi;
@@ -5803,7 +5929,39 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
         cur.tr = false; cur.gi = ++g;
       }
     }
-    return lines;
+    /* v4.23（JY-双语对齐）：源B tlyric 常有「两行原文 → 一行合并译文」的粒度错位
+     （如日文 couplet 两句共用一句中文译文）。上面分组只把译文贴到紧邻的上一句原文，
+     导致第二句原文独自成组、没有译文 —— 播到那句时译文飘在上一句下面，看着就是
+     「原文和译文没对应」。补一道：凡是没有译文傍身的原文行，把时间上最近的译文
+     （≤8s）复制一份、用本行时间戳、并入本行同组，保证每一句当前原文都带着自己的译文
+     一起高亮。1:1 正常的歌不会触发（组里已有译文）。 */
+  var _hasTr = {};
+  for(var _i=0;_i<lines.length;_i++){ if(lines[_i].tr) _hasTr[lines[_i].gi] = true; }
+  var _out = [];
+  for(var _i=0;_i<lines.length;_i++){
+    var _c = lines[_i];
+    _out.push(_c);
+    if(!_c.tr && !_hasTr[_c.gi]){
+      var _adjUnc = false;
+      if(_i>0 && !lines[_i-1].tr && !_hasTr[lines[_i-1].gi]) _adjUnc = true;
+      if(_i<lines.length-1 && !lines[_i+1].tr && !_hasTr[lines[_i+1].gi]) _adjUnc = true;
+      if(_adjUnc) continue;
+      var _best = null, _bd = 1e9;
+      for(var _j=0;_j<lines.length;_j++){
+        if(lines[_j].tr){
+          var _dt = Math.abs((lines[_j].t||0) - (_c.t||0));
+          if(_dt < _bd && _dt <= 8){ _bd = _dt; _best = lines[_j]; }
+        }
+      }
+      if(_best){
+        var _dup = {}; for(var _k in _best) _dup[_k] = _best[_k];
+        _dup.t = _c.t; _dup.gi = _c.gi; _dup.tr = true;
+        _out.push(_dup);
+        _hasTr[_c.gi] = true;
+      }
+    }
+  }
+  return _out;
   }
   function lrcGroupRange(i){
     var n = lrcLines.length;
@@ -6063,6 +6221,11 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
 
   /* 统一搜索：本地（模糊/拼音）+ 在线，本地命中直接播，在线点即播 */
   var uniTimer = null;
+  /* v4.41（修 2）：上一次统一搜索的原始结果。为什么要留着：
+     排序按钮在搜索态下要能**原地重排**现在屏幕上这一屏 —— 手上没有原始命中
+     就只能重新发一次网络请求（慢、还可能撞上 searching 互斥）。存 {kw,loc,onl}，
+     kw 用来判定「缓存是不是当前这个关键词的」，过期就重搜。 */
+  var LAST_UNI = null;
   function onUniInput(){
     clearTimeout(uniTimer);
     var kw = ($("q").value || "").trim();
@@ -6084,6 +6247,8 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       .then(function(d){
         var loc = (d && d.local) || [];
         var onl = (d && d.online) || [];
+        /* v4.41：原始结果留一份，排序按钮原地重排要用（见 rerenderForSort） */
+        LAST_UNI = { kw: kw, loc: loc, onl: onl };
         renderUnifiedLocal(loc, kw);
         renderUnifiedOnline(onl, kw);
       })
@@ -6095,6 +6260,10 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
 
   function renderUnifiedLocal(loc, kw){
     var box = $("songs");
+    /* v4.41（修 1）：本地命中也要跟列表用**同一个**排序口径。
+       只排本地这一组：在线结果走 renderUnifiedOnline 渲染到另一个容器 #onres，
+       两块各排各的，「本地 / 在线」的分组结构一个像素都不动。 */
+    loc = sortNames(loc || [], curSort);
     if(!loc.length){
       box.innerHTML = emptyHtml("本地没有找到「" + esc(kw) + '」', "看看下面的在线结果，或换个关键词", "search");
       return;
@@ -7609,6 +7778,17 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
        每拍重排一次的话这一推永远轮不到执行。 */
     if(advT && Date.now() - advArm < 10000) return;
     advArm = Date.now();
+    /* v4.62（JY-ARMSNAP）：排程这一刻把「判定对象」钉住。
+       2026-11-22 12:06 实测（musictool.log + xiaomusic_run.log 对时）：
+       服务端定时器 04:06:48 先切到「邱有句 - 寻」并起了播，本端 poll 在
+       04:06:50 已把 curName 采纳成「寻」（还写了组播 by=app name=寻），
+       可这一轮推进是**为上一首「春日影」排的**。于是 advAsk 拿设备回报的
+       「寻」和活的 curName「寻」比 → 同 → 判「它还在放」，往下走到
+       doAdvance → 无条件喊「下一首」→ 一刀跳过刚起播 2 秒的「寻」。
+       用户听到的就是「一首只放两秒就跳」。
+       钉住 armName 之后：设备回报「寻」≠ armName「春日影」→ 判「它已经
+       跳过去了」收工，交给服务端定时器，不再多推一刀。 */
+    var armName = curName || "";
     clearTimeout(advT);
     advT = setTimeout(function(){
       advT = null;
@@ -7647,17 +7827,17 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
                这是三条补丁里的第三条：7142 让 ref 在流播时当选（才轮得到
                ensureAdvance）、7677 让 devPosOwned 成立（devAtEnd 那条硬证据
                才通）、本条让 advAsk 不被 URL 骗走。缺一条切歌都不通。 */
-            if(pm.cur_music && !sameSong(pm.cur_music, curName) &&
+            if(pm.cur_music && !sameSong(pm.cur_music, (armName || curName)) &&
                !(streamActive() && looksLikeStreamRef(pm.cur_music))) return;   // 它已经跳过去了
             /* 它自己又播起来了。设备状态优先：设备说没出声、只是 xiaomusic 的标志
                还没翻的，这一推照推（否则又会卡在「唱完了不切下一首」）。 */
             if(extPaused) return;
             if(!frc && (devPlay === true || (devPlay !== false && pm.is_playing))) return;
           }
-          if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc); return; }
+          if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc, armName); return; }
           setTimeout(advAsk, ADV_WATCH);
         }).catch(function(){
-          if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc); return; }
+          if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc, armName); return; }
           setTimeout(advAsk, ADV_WATCH);
         });
       })();
@@ -7737,9 +7917,12 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
   }
   /* auto：true = 歌放完了自动推进（doAdvance 里那一处）；false = 用户手点「下一首」。
      手点要立刻响应，不许被下面那道 pre-flight 的 ~15ms 请示吞掉；自动推进则必须先请示。 */
-  function advViaBox(auto){
+  function advViaBox(auto, expect){
     if(fallbackHeld()) return;         // v4.12：兜底刚落地的 5 秒内不再推
-    var before = curName, tries = 0;
+    /* v4.62（JY-ARMSNAP）：before 用 doAdvance 传来的判定对象（arm 快照），
+       不要用活的 curName —— 否则 pre-flight 那句 `devMovedFrom(nm, before)`
+       会把「设备已经在下一首上」误判成「还在同一首」，照发不误。 */
+    var before = (expect && expect.length) ? expect : curName, tries = 0;
     /* v4.11：核对窗口到期 ≠ 「设备没换」。xiaomusic 换曲要 2~3 秒，窗口只有 1.4 秒，
        所以兜底前**再问一次设备**：真换了就收工（多花一次 ~15ms 的请求），
        这样「设备慢」不会被误判成「设备没动」，也就不会补上多余的一刀。
@@ -7794,9 +7977,12 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     }).catch(fireOnce);
   }
 
-  function doAdvance(force){
+  function doAdvance(force, expect){
     if(!curName) return;
-    var before = curName;   // v4.12b S1A：此刻的歌名才是「要被接走的那首」，后面 6~7 秒里 curName 可能已被采纳成新歌
+    /* v4.62（JY-ARMSNAP）：expect 是 ensureAdvance 排程时钉住的判定对象。
+       有它就用它 —— 活的 curName 可能已经被 poll 采纳成下一首了，
+       再拿它当 before 就等于「从新歌往后数一首」= 跳过新歌。 */
+    var before = (expect && expect.length) ? expect : curName;   // v4.12b S1A：此刻的歌名才是「要被接走的那首」，后面 6~7 秒里 curName 可能已被采纳成新歌
     if(playing && !force) return;
     /* 上一推刚发出去就别再补一刀：设备换曲要 1~3 秒，
        这期间再发一次就成了「一下跳过两首」。 */
@@ -7823,7 +8009,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
          喊「下一首」等于又从头放一遍）。advViaBox 还要连问三拍（≈4 秒）才硬切，
          那 4 秒正是用户听到的「从头复播 5 秒才切」。绕回已确认 → 直接硬切。 */
       if(force){ advFallback(before); return; }
-      advViaBox(true);                  // 只剩音箱：先问设备在放什么，再喊下一首并核对
+      advViaBox(true, before);          // 只剩音箱：先问设备在放什么，再喊下一首并核对
     }else{
       advFallback(before);
     }
@@ -7949,6 +8135,23 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
           var _dn = s.dur || durCache[curName] || baseDur || 0;
           var _atEnd = devPosOwned(curName) && devPosAtEnd(_dn);
           if(_dn > 3 && !_atEnd){
+            extPaused = true; s.playing = false;
+            nearEndAt = 0; nearEndName = "";   // 不是唱完：歌尾痕迹作废
+          }
+        }else if(devPlay === false && !pm.is_playing && !appPaused && !extPaused &&
+                 !pendLive() && (Date.now() - resumeHoldAt > RESUME_HOLD_MS) &&
+                 !(gSwitchAt && Date.now() - gSwitchAt < 3500)){
+          /* JY-语音关闭复播：语音「关闭音乐」走的是 xiaomusic 自己的 stop()，
+             设备停(status=2) 的同时 /playingmusic 的 is_playing 也被翻成 false。
+             上面那道外部暂停闸要求 pm.is_playing 为真（它针对的是「对着音箱
+             说句话、音箱自己静音、xiaomusic 全无感知」），于是「软件标志和设备
+             一起停」这种显式停止反而没人认：extPaused 恒为 false，歌尾留的
+             nearEndAt 被 stoppedAtEnd 读成「唱完了」→ justEnded → ensureAdvance
+             → doAdvance → playSong → POST /playmusic，把设备重新点起来。
+             这里补认这个组合；真唱完（设备停在歌尾）仍交回原播完逻辑，不拦。 */
+          var _dns = s.dur || durCache[curName] || baseDur || 0;
+          var _atEndS = devPosOwned(curName) && devPosAtEnd(_dns);
+          if(_dns > 3 && !_atEndS){
             extPaused = true; s.playing = false;
             nearEndAt = 0; nearEndName = "";   // 不是唱完：歌尾痕迹作废
           }
@@ -8608,7 +8811,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       abSet("aRowAcct", "aAcct", "acct", t, !!(d && d.valid));
     }).catch(function(){ abSet("aRowAcct", "aAcct", "acct", "未知", false); });
     var cc = $("aCmd");
-    if(cc) cc.textContent = 'ssh -p 8022 用户名@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
+    if(cc) cc.textContent = 'ssh -p 8022 u0_a000@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
     var out = $("aOut");
     if(out) out.style.display = "none";
   }
@@ -9178,8 +9381,25 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     });
   };
 
+  /* v4.40：本端推「下一首」的前提（JY-顺序）。
+     只有「本地歌曲列表页 + 没在搜索 + 当前这首确实在这个列表里」时才敢本端 step：
+       · 发现/我的歌单/搜索这几个面板里，屏幕上看到的顺序和 `songs` 不是一回事，
+         在那些面板本端推等于乱跳，宁可交回设备（= 改之前的行为，零回归）；
+       · 搜索态下 #songs 显示的是 unifiedSearch 的在线结果，`songs` 其实没变，
+         这时候本端推会推进一个用户看不见的列表。 */
+  function canStepLocal(){
+    if(!songs || !songs.length) return false;
+    if(typeof CUR_PANE !== "undefined" && CUR_PANE !== "list") return false;
+    if((($("q") && $("q").value) || "").trim()) return false;
+    return songs.indexOf(curName) >= 0;
+  }
+
   $("btnPrev").onclick = function(){
     if(OUTS.some(function(t){ return t !== "box"; })){ step(-1); return; }
+    /* v4.40：音箱独占时也优先走本端 step（理由同下面的 btnNext）：
+       设备的「上一首」同样是在它自己的全库列表里 -1，跟界面歌单无关。
+       只有当前歌确实在界面列表里才敢本端推，否则 step() 会落到列表最后一首。 */
+    if(canStepLocal()){ step(-1); return; }
     sendCmd("上一首").then(function(){ setTimeout(poll, 900); }).catch(function(e){ toast(e.message); });
   };
   $("btnNext").onclick = function(){
@@ -9187,6 +9407,11 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     // 只能由本端抢在发「下一首」命令之前把这首歌点起来
     if(nextUpTake()) return;
     if(OUTS.some(function(t){ return t !== "box"; })){ step(1); return; }
+    /* v4.40：音箱独占时也走本端 step —— 设备的「下一首」是在它自己的全库列表里 +1，
+       跟界面歌单无关（实测：点下一首跳到「01 Remember」，再点跳到「夢限大」）。
+       但只有当前歌确实在界面列表里才能本端推，否则 step() 会落到列表第一首，
+       宁可交回设备也别乱跳（见 canStepLocal 的三道闸）。 */
+    if(canStepLocal()){ step(1); return; }
     sendCmd("下一首").then(function(){ setTimeout(poll, 900); }).catch(function(e){ toast(e.message); });
   };
   var bq1 = $("btnQueue");
@@ -9369,12 +9594,14 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     clearTimeout(qTimer);
     qTimer = setTimeout(function(){
       var kw = ($("q").value || "").trim();
-      if(kw){ unifiedSearch(kw); } else { $("onres").style.display = "none"; applyFilter(); }
+      if(kw){ unifiedSearch(kw); }
+      else { LAST_UNI = null; $("onres").style.display = "none"; applyFilter(); }
       $("songs").scrollTop = 0;
     }, 320);
   });
   $("clr").onclick = function(){
     $("q").value = "";
+    LAST_UNI = null;              // v4.41：清空关键词 = 搜索态结束，缓存作废
     $("sbox").classList.remove("has");
     $("onres").style.display = "none";
     applyFilter();
@@ -9402,6 +9629,15 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       })
       .catch(function(e){ toast("创建失败：" + e.message); });
   });
+
+  /* v4.40：列表三态排序（默认 / 歌名 / 歌手）。两个入口同一套逻辑：
+     顶栏 #btnSort（手机竖屏）+ 左栏 #rSort（平板横屏，body.pad 会隐藏顶栏图标）。 */
+  (function bindSort(){
+    var bs = $("btnSort"), rs = $("rSort");
+    if(bs) bs.onclick = cycleSort;
+    if(rs) rs.onclick = cycleSort;
+    syncSortBtn();   // 启动即回显存下来的状态（避免按钮写「默认」而列表其实排过序）
+  })();
 
   $("btnRefresh").onclick = function(){
     sendCmd("刷新列表").catch(function(){});
@@ -10328,7 +10564,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     var g = parseFloat((LRCAJ[curName] || {})["*"]) || 0;
     el.textContent = "整首 " + (g > 0 ? "+" : "") + g.toFixed(2) + "s";
   }
-  /* 整首偏移：所有行统一挪，存保留键 "*"，夹到 ±10 秒、两位小数。
+  /* 整首偏移：所有行统一挪 delta 秒，存保留键 "*"，夹到 ±10 秒、两位小数。
      立即生效 —— 不重解析歌词、不重建 DOM，只就地改 lrcLines 每行的时间戳；
      高亮位置靠 paintLyric(true) 当场重算。lrcBaseT 不动，行 key 因此始终稳定。 */
   function lrcAdjWholeNudge(delta){
@@ -10338,13 +10574,14 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     var cur = parseFloat(LRCAJ[name]["*"]) || 0;
     var nv = Math.round((cur + delta) * 100) / 100;
     nv = Math.max(-10, Math.min(10, nv));
+    /* 归零同样要显式存 0（理由见 lrcAdjNudge）：delete 之后再推一个不含 '*' 的
+       dict，服务端 merge 只增不删，磁盘上还是旧值，重载即复活。 */
     LRCAJ[name]["*"] = nv;
     var dlt = Math.round((nv - cur) * 100) / 100;   // 夹住后真正挪了多少，可能不足 delta
     if(!dlt){ refreshLrcAdjWhole(); return; }       // 已经贴在 ±10 上，点也挪不动，别白发一次存盘
     var ad = LRCAJ[name] || {};
     for(var i = 0; i < lrcLines.length; i++){
       var ln = lrcLines[i];
-      if(!ln) continue;
       /* 立即生效：不重解析、不重建 DOM，只改时间戳。
          时间一律用「基准秒 + 本行偏移 + 新整首值」重算，不做 lrcLines[i].t + dlt：
          整首往负方向调时，前奏附近时间很短的行会被夹到 0（不为负是硬要求），
@@ -10370,8 +10607,13 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     var key = lrcadjKey(bt, l.s);
     LRCAJ[name] = LRCAJ[name] || {};
     var cur = parseFloat(LRCAJ[name][key]) || 0;
+    /* step === 0 是「复位」按钮的本意：这一句回到原时间，不是「加 0 秒」。
+       写成 cur + 0 = cur 的话点复位等于原值写回，按钮完全无效（实测 -0.5 后复位仍 -0.5）。 */
     var nd = (step === 0) ? 0
       : Math.max(-10, Math.min(10, Math.round((cur + step) * 100) / 100));
+    /* 必须显式写 0，不能 delete：服务端 lrcadj_write 是按 payload 里「出现过」的键
+       逐个 merge 的，本地删掉键后推上去的 dict 根本不含这个键，服务端就不知道要删，
+       磁盘上旧值一直在 —— 界面归零了、重载就复活。送 0 才会被 pop 掉。 */
     LRCAJ[name][key] = nd;
     /* 逐行独立存，但生效时间必须叠加整首偏移，否则整首调过之后
        单行微调会把这句拽回没偏移的位置，看着像「整首失效了」 */
@@ -10558,11 +10800,11 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     stopLoginTimers();
     var box = $("qrBox"), img = $("qrImg"), tip = $("logTip"), cnt = $("logCount");
     if(box) box.classList.remove("ready");
-    if(tip) tip.textContent = "正在向服务器请求登录二维码…";
+    if(tip) tip.textContent = "正在向请求登录二维码…";
     if(cnt) cnt.textContent = "";
-    /* 改走服务端的 /api/qr_start，不再直连音频后端的 /api/get_qrcode。
-       原因（真机踩过）：直连那个接口只要令牌还能换票就回 already_logged_in，
-       前端显示「账号已登录，无需扫码」并关面板 —— 可这时设备列表往往还是 401，
+    /* v4.41：改走 musictool 的 /api/qr_start，不再直连 xiaomusic 的 /api/get_qrcode。
+       原因（真机踩过）：直连那个接口只要 passToken 还能换票就回 already_logged_in，
+       前端显示「账号已登录，无需扫码」并关面板 —— 可这时 device_list 往往还是 401，
        用户被挡在门外，压根拿不到码。qr_start 会在空码时自动改要**强制码**，
        并且把码在服务端渲染成 PNG（data: URI），不会出现 img.onerror。 */
     withTimeout(fetch(MM + "/api/qr_start").then(function(r){ return r.json(); }), 30000).then(function(d){
@@ -10829,7 +11071,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     document.body.classList.toggle("pad", PAD);
     var th = $("rTheme"); if(th) th.style.display = PAD ? "none" : "";
     if(PAD){
-      // 搜索框挪到顶栏（像源D那样），竖屏时还原
+      // 搜索框挪到顶栏（像音乐那样），竖屏时还原
       var slot = $("padSearch"), box = $("sbox");
       if(slot && box && box.parentNode !== slot) slot.appendChild(box);
       setRail(CUR_PANE);

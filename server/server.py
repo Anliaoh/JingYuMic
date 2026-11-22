@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-鲸屿Mic · 服务端
+"""鲸屿Mic · 服务端
 
 给网页端 / 桌面端 / 手机端提供封面、歌词、推荐与播放状态聚合。
 纯标准库实现，默认监听 0.0.0.0:58091。
@@ -47,7 +46,6 @@ except Exception as _e:
 VERSION = "4.01"
 BOOT_TS = time.time()
 
-# 公开版本：被移除功能的统一返回提示。凡是返回 {"ok": False, "msg": ...} 的接口都用它。
 _JY_NO_SOURCE_MSG = ("此功能需要在线内容源，本仓库不提供。可自行接入后使用，见 docs/OPTIONAL-ONLINE-SOURCES.md")
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -61,7 +59,7 @@ LRC_DIR = os.path.join(CACHE_DIR, "lrc")
 INDEX_FILE = os.path.join(CACHE_DIR, "index.json")
 LVID_DIR = os.path.join(CONF_DIR, "lvideo")
 PORT = 58091
-BACKEND_API = "http://127.0.0.1:58090"
+XIAOMUSIC_API = "http://127.0.0.1:58090"
 
 # ------------------------------------------------- JY-PLCACHE 歌单/推荐「先下后播」缓存
 # 用户原话（v4.33）：「出歌单的同时，把歌曲文件、封面、歌词同时储存起来，就不用等那么久的缓冲了。」
@@ -87,7 +85,7 @@ for d in (CACHE_DIR, COVER_DIR, LRC_DIR, LVID_DIR, PLAYLIST_CACHE):
 AVATAR_FILE = os.path.join(CONF_DIR, "avatar.png")
 
 # ------------------------------------------------- JY-WAVCACHE 转码 wav 缓存双闸清理
-# 背景：语音助手音箱不认 FLAC/APE/AIFF（实测 status=2、position 恒 0，看着在播其实没声），
+# 背景：音箱不认 FLAC/APE/AIFF（实测 status=2、position 恒 0，看着在播其实没声），
 # 于是 xiaomusic 的 jy_mstream()（**另一个进程**，源码在
 #   /root/venv/lib/python3.11/site-packages/xiaomusic/api/routers/file.py）
 # 会把无损源文件实时转成 CD 品质 wav（pcm_s16le / 44.1kHz / 2ch）缓存下来给音箱听。
@@ -113,7 +111,7 @@ WAVCACHE_BOOT_DELAY_S = 25  # 开机后先等 xiaomusic 把自己准备好，再
 LRCREPORT_FILE = os.path.join(CONF_DIR, "lrc_report.json")
 LRC_KINDS = ("time", "text", "pair", "missing", "other")
 
-_lock = threading.BoundedSemaphore(2)  # 上游站点 请求：允许 2 个并发（日均推荐 6 关键词原被完全串行≈9s，放宽到 2 并发约减半；个人低频使用对频控无风险）
+_lock = threading.BoundedSemaphore(2)  # gequbao 请求：允许 2 个并发（日均推荐 6 关键词原被完全串行≈9s，放宽到 2 并发约减半；个人低频使用对频控无风险）
 _index = {}
 _index_dirty = False
 
@@ -152,7 +150,7 @@ def _ex_cancel(ex):
     不能就退回 wait=False。
 
     为什么要取消：`shutdown(wait=False)` 只是「不等人」，排队的任务**照样会跑**，
-    而每个任务都要抢那把只有 2 个名额的全局 上游站点 锁。冷算 12 秒的场景里，
+    而每个任务都要抢那把只有 2 个名额的全局 gequbao 锁。冷算 12 秒的场景里，
     前一轮超时放弃的任务和新请求挤在同一个门口 —— 这就是「明明只搜 6 个词，
     却要等好几轮」的来源。取消掉没人要的任务，锁就能干净地让给前台请求。
     """
@@ -437,11 +435,12 @@ def _cache_one_song(sid, song="", artist=""):
     tmp = dest + ".part"
     try:
         hdrs = {"User-Agent": UA}
-        _ref = ""  # 本仓库不提供在线源，Referer 留空
+        _ref = _STREAM_REFERER.get(src) or ""
         if _ref:
             hdrs["Referer"] = _ref
         req = urllib.request.Request(url, headers=hdrs)
         total = 0
+        too_big = False
         with opener().open(req, timeout=90) as r, open(tmp, "wb") as f:
             while True:
                 chunk = r.read(256 * 1024)
@@ -450,7 +449,18 @@ def _cache_one_song(sid, song="", artist=""):
                 f.write(chunk)
                 total += len(chunk)
                 if total > PL_MAX_FILES:
+                    too_big = True
                     break
+        # 超限时只是 break，tmp 里是半截文件 —— 以前会走 os.replace 把它
+        # 当成完整缓存发布，plcache 索引也跟着记一笔，之后播放必然中途断流。
+        # 现在直接丢弃，不发布。
+        if too_big:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            log("pl prefetch too big, discard %s (%dB)" % (sid, total))
+            return
         if total < 10000:
             try:
                 os.remove(tmp)
@@ -796,7 +806,7 @@ def parse_lrc(page):
 
 
 # ---------- 上游抖动熔断（v4.01）----------
-# 实战起因（2026-10-30）：上游站点 全站返 HTTP 520 时，search() 每打一次白烧 2~4.5s，
+# 实战起因（2026-10-30）：gequbao 全站返 HTTP 520 时，search() 每打一次白烧 2~4.5s，
 # 而一次「每日推荐」要打好几次 → 本来秒级的东西变成 22~33 秒，用户感受是「一点开就卡」。
 # 规则：同一个源**连续失败 3 次** → 冷却 120s；冷却期间直接当它不存在（返回空、不排队、
 #       不联网、不占 _lock）。冷却到期只放**一个**探测请求过去：成功就全清恢复；再失败
@@ -915,6 +925,10 @@ def fetch_song(mid):
 _ocov_cache = {}          # mid -> (ts, 图片字节)：搜索结果列表的封面，落一次详情页就有了
 _ocov_neg = {}            # mid -> ts：取不到的记 5 分钟，别每行渲染都去打一次详情页
 _ocov_lock = threading.Lock()
+# ==jy_ocov_disk== 在线封面磁盘缓存 + 并发单飞：重启/内存清缓存后仍秒回，同 id 只拉一次
+ONLINE_COVER_DIR = os.path.join(COVER_DIR, "online")
+_oncov_flight = {}        # mid -> threading.Event：进行中的抓取，其余请求等它落盘
+_oncov_flight_lock = threading.Lock()
 
 def _wy_pic_url(sid):
     """第三方音乐平台封面 —— 接口占位（未实现）。
@@ -929,42 +943,109 @@ def _wy_pic_url(sid):
     return ""
 
 
+def _online_cover_fetch(mid):
+    """联网封面取回 —— 接口占位（未实现）。
+
+    本仓库只处理本地曲库，不含在线内容源的实现。
+    此函数保留签名、恒返回空值，调用方无需改动即可运行。
+    """
+# [integration-point]
+    return None
+
+
 def online_cover_bytes(mid):
     """按在线歌曲 id 取封面图。搜出来的歌还没下载，本地自然没有封面，
-    /api/cover 只认本地所以全是 ♪ 占位 —— 这里去源站详情页拿真封面并缓存一周。
-    注意：图片多在源C CDN，带 上游站点 的 Referer 会被 403，只发 UA。"""
+    /api/cover 只认本地所以全是 ♪ 占位 —— 这里去源站详情页拿真封面。
+    ==jy_ocov_disk== 在原来的内存缓存之外再落一份磁盘缓存（COVER_DIR/online/<mid>.img），
+    重启 / 内存缓存被清（>300 条）之后仍秒回；同一 mid 并发只拉一次（单飞），
+    避免发现页十几张卡同时渲染时各打各的源站。负缓存仍只存内存（5 分钟）。
+    注意：图片多在源C CDN，带 源A 的 Referer 会被 403，只发 UA。"""
+    mid = str(mid)
+    # 1) 内存命中
     with _ocov_lock:
         hit = _ocov_cache.get(mid)
         nt = _ocov_neg.get(mid)
     if hit and time.time() - hit[0] < 86400 * 7:
         return hit[1]
+    # 2) 磁盘命中（重启后仍在，避免每次都去源站）
+    dp = os.path.join(ONLINE_COVER_DIR, sanitize_filename(mid) + ".img")
+    if os.path.isfile(dp) and os.path.getsize(dp) > 0:
+        try:
+            with open(dp, "rb") as f:
+                data = f.read()
+            with _ocov_lock:
+                if len(_ocov_cache) > 300:
+                    _ocov_cache.clear()
+                _ocov_cache[mid] = (time.time(), data)
+            return data
+        except Exception:
+            pass
+    # 3) 负缓存（仅内存，5 分钟，避免同一行反复打源站）
     if nt and time.time() - nt < 300:
         raise RuntimeError("cover unavailable")
-    pic = ""
-    if str(mid).lower().startswith("wy:"):
-        pic = _wy_pic_url(mid)
-    if not pic:
-        pic = (fetch_song(mid) or {}).get("cover") or ""
-    data = b""
-    if pic:
+    # 4) 单飞：同一 mid 并发请求只让一个去拉，其余等它落盘
+    with _oncov_flight_lock:
+        ev = _oncov_flight.get(mid)
+        if ev is None:
+            ev = threading.Event()
+            _oncov_flight[mid] = ev
+            owner = True
+        else:
+            owner = False
+    if not owner:
+        ev.wait(30)
+        with _ocov_lock:
+            hit = _ocov_cache.get(mid)
+        if hit and time.time() - hit[0] < 86400 * 7:
+            return hit[1]
+        if os.path.isfile(dp) and os.path.getsize(dp) > 0:
+            with open(dp, "rb") as f:
+                return f.read()
+        raise RuntimeError("cover unavailable")
+    try:
+        data = _online_cover_fetch(mid)
         try:
-            req = urllib.request.Request(pic, headers={"User-Agent": UA})
-            with opener().open(req, timeout=20) as r:
-                data = r.read(4 * 1024 * 1024)
+            os.makedirs(ONLINE_COVER_DIR, exist_ok=True)
+            with open(dp, "wb") as f:
+                f.write(data)
         except Exception:
-            data = b""
-    if not data:
+            pass
+        with _ocov_lock:
+            if len(_ocov_cache) > 300:      # 内存缓存别无限长
+                _ocov_cache.clear()
+            _ocov_cache[mid] = (time.time(), data)
+            _ocov_neg.pop(mid, None)
+        return data
+    except Exception:
         with _ocov_lock:
             _ocov_neg[mid] = time.time()
             if len(_ocov_neg) > 500:
                 _ocov_neg.clear()
-        raise RuntimeError("no cover")
-    with _ocov_lock:
-        if len(_ocov_cache) > 300:      # 内存缓存别无限长
-            _ocov_cache.clear()
-        _ocov_cache[mid] = (time.time(), data)
-        _ocov_neg.pop(mid, None)
-    return data
+        raise
+    finally:
+        with _oncov_flight_lock:
+            _oncov_flight.pop(mid, None)
+        ev.set()
+
+
+def _prefetch_one_online_cover(mid):
+    """联网封面取回 —— 接口占位（未实现）。
+
+    本仓库只处理本地曲库，不含在线内容源的实现。
+    此函数保留签名、恒返回空值，调用方无需改动即可运行。
+    """
+# [integration-point]
+    return None
+
+
+def prefetch_online_covers(ids):
+    """联网封面取回 —— 接口占位（未实现）。
+
+    本仓库只处理本地曲库，不含在线内容源的实现。
+    此函数保留签名、恒返回空值，调用方无需改动即可运行。
+    """
+# [integration-point]
+    return 0
 
 
 # ---------------- 歌单配图：按关键词找一张图（v3.92） ----------------
@@ -1135,9 +1216,8 @@ def _plcov_cached(key):
 
 
 def _plcov_build(key):
-    """取封面图：两个图源都是接入点（`_plcov_bing` / `_plcov_music`），
-    在公开版本里恒无图，于是抛 no cover，由前端回落到本地封面 / 首字图。
-    整个函数仍受 PLCOV_MAX 总时限约束 —— 配图是锦上添花，
+    """真去抓一张图：必应 → 音乐源兜底。全程受 PLCOV_MAX 总时限约束，
+    到点还没图就记一条失败缓存并返回 404 —— 配图是锦上添花，
     绝不能为了等一张图把整个请求（和整个页面）挂住。"""
     hid = hashlib.md5(key.encode("utf-8")).hexdigest()[:16]
     path = os.path.join(PLCOV_DIR, hid + ".jpg")
@@ -1259,6 +1339,28 @@ def resolve_download_url(mid):
     return ("", {})
 
 
+_DL_PLUS_RULES = (
+    (u"+-+", u" - "), (u"+(", u" ("), (u"+[", u" ["),
+    (u")+", u") "), (u"]+", u"] "), (u"+<", u" <"), (u">+", u"> "),
+)
+
+
+def _dl_clean_name(s):
+    """下载落盘前把「URL 编码残留的 +」还原成空格（v4.39）。
+
+    真实现场：曲库里一次性躺着 21 个 `借我+-+谢春花.mp3`、`房东的猫+-+简情歌+(钢琴版).flac`。
+    来源是客户端把名字塞进 query 串时空格变 `+`，服务端拿这份原样当文件名，
+    于是空格全成了加号。危害不在难看 —— `借我+-+谢春花` 与设备回报的
+    `借我 - 谢春花` 对不上，`sameSong()` 就不认，容易出「以为设备跳走」的误判。
+
+    规则刻意保守：只动**贴着分隔符**的 `+`，独立的 `+`（C++、A+B）一律不碰。
+    """
+    out = s or ""
+    for a, b in _DL_PLUS_RULES:
+        out = out.replace(a, b)
+    return out
+
+
 def download_song(mid, prefer_name=None):
     """歌曲下载 —— 接口占位（未实现）。
 
@@ -1275,7 +1377,7 @@ def download_song(mid, prefer_name=None):
 # ============================================================ JY-SRC 多音源
 # 三源接力。每个源只干它最强的一件事，取不到就自动降级给下一个：
 #
-#   源A  —— 主力。索引最全，连 VIP 歌都在（返回的就是 源C-CDN 的 CDN 直链）
+#   源A  —— 主力。索引最全，连 VIP 歌都在（返回的就是 CDN 节点 的 CDN 直链）
 #   源B  —— 补充。排序准、有官方时长/封面，补外文歌；但 fee=1 的付费歌拿不到 url
 #   源C    —— 兜底。它自己的搜索索引弱（没有陈奕迅版权，30 条全是翻唱），
 #              但个别曲库只有它有，所以放最后
@@ -1296,6 +1398,7 @@ JY_SRC_WAIT = 3.2                            # 搜索总时长上限（秒），
 # 为什么是 3.2：源A是主力（唯一能稳定给 VIP 直链的），典型 2.2~2.7 秒，
 # 卡 2.5 会经常把它砍掉，列表首条变成要换源才能播的源B付费歌。
 # 3.2 能覆盖它绝大多数情况；最坏也就比以前单源的 2.4 秒多 0.8 秒。
+JY_EAPI_KEY = "e82ckenh8dichen8"             # 源B eapi 固定密钥（公开常量，非账号凭据）
 
 _jy_src_cache = {}          # (kind, key) -> (时间戳, 值)
 _JY_SRC_TTL = 1800
@@ -1426,124 +1529,6 @@ def jy_src_of(sid):
     return "gqb", s
 
 
-def _jy_mmss_secs(txt):
-    """'04:16' / '4:16' / '1:04:16' → 秒；认不出来返回 0。
-
-    源A详情页 appData 的 mp3_duration 就是这个格式（2026-11 实测
-    "04:16" = 256 秒，跟源B的 255/256 对得上）。
-    """
-    t = (txt or "").strip()
-    if not t:
-        return 0
-    try:
-        parts = [int(p) for p in t.split(":")]
-    except (TypeError, ValueError):
-        return 0
-    if not parts or any(p < 0 for p in parts):
-        return 0
-    secs = 0
-    for p in parts:
-        secs = secs * 60 + p
-    return secs
-
-
-def _jy_dur_secs(v):
-    """缓存里的 dur → 秒。wy/kw 存的是 int 秒，gqb 详情页存的是 'mm:ss' 字符串。
-
-    不管喂进来什么脏东西都返回 int，绝不抛 —— 点歌路径上不能因为一个时长字段 500。
-    """
-    if v is None or isinstance(v, bool):
-        return 0
-    if isinstance(v, (int, float)):
-        return int(v) if v > 0 else 0
-    t = str(v).strip()
-    if ":" in t:
-        return _jy_mmss_secs(t)
-    if not t:
-        return 0
-    try:
-        return int(float(t))
-    except (TypeError, ValueError):
-        return 0
-
-
-def jy_src_dur(sid):
-    """反查这首歌的真实时长（秒），三级递减，查不到返回 0。
-
-    一级 · 按 id 精确命中：扫 _jy_src_cache 找 rec["id"] == sid 的记录取 dur。
-        跟 jy_src_lookup 同源。wy / kw 源的记录带真实时长，命中就直接用。
-
-    二级 · 源A详情页缓存（"gqb_dur", mid）：
-        gqb 源的搜索页 HTML 里没有时长字段（实测全页 0 处 duration/时长），
-        但详情页 /music/<mid> 的 appData 里有 mp3_duration。jy_gqb_url() 本来
-        就要抓这个页面（取 play_id），顺手把时长存进缓存 —— 零额外请求。
-        stream 分支里 jy_resolve() 跑在 jy_src_dur() 之前，所以到这一步时
-        详情页通常已经抓过了。
-
-    三级 · 跨源兜底：gqb 记录本身 dur 恒 0，而 jy_search_all 是三源拿同一个
-        关键词并发搜、结果全在同一份缓存里，所以缓存里通常同时躺着同一首歌的
-        wy / kw 记录（带真实时长）。按 jy_norm 归一化后的**歌名 + 歌手严格相等**
-        去借；两个字段都要完全相等才认，不用 jy_score / 不用包含匹配 —— 这是
-        为了不把《孤勇者 萧忆情Alex》的时长借给《孤勇者 陈奕迅》。歌手为空的
-        一律不兜底（同名不同歌风险太大）。多个候选取中位数：wy 和 kw 对同一首歌
-        偶尔差 1~3 秒，取第一个会有随机性。
-
-    三级都拿不到（缓存过期 / 服务刚重启 / 源本身没有）就返回 0，前端有降级：
-    不显示总长、进度条按已播时间渐近、切歌靠设备回报的播放结束事件。
-    全程不发任何网络请求。
-    """
-    # ---- 一级：按 id 精确命中 ----
-    for v in _jy_src_cache.values():
-        lst = v[1]
-        if isinstance(lst, list):
-            for rec in lst:
-                if isinstance(rec, dict) and rec.get("id") == sid:
-                    d = _jy_dur_secs(rec.get("dur"))
-                    if d > 0:
-                        return d
-
-    # ---- 二级：源A详情页缓存（jy_gqb_url 顺手存的） ----
-    src, key = jy_src_of(sid)
-    if src == "gqb":
-        for k in (key, sid):
-            d = _jy_dur_secs(_jy_cache_get(("gqb_dur", k)))
-            if d > 0:
-                return d
-
-    # ---- 三级：跨源兜底，归一化后歌名 + 歌手严格相等 ----
-    song, artist = jy_src_lookup(sid)
-    if not song or not artist:
-        return 0
-    ns, na = jy_norm(song), jy_norm(artist)
-    if not ns or not na:
-        return 0
-    durs = []
-    for v in _jy_src_cache.values():
-        lst = v[1]
-        if not isinstance(lst, list):
-            continue
-        for rec in lst:
-            if not isinstance(rec, dict):
-                continue
-            if jy_norm(rec.get("song")) != ns or jy_norm(rec.get("artist")) != na:
-                continue
-            # jy_norm 会把括号里的内容抹掉（《孤勇者（片段）》→《孤勇者》），
-            # 所以光靠严格相等仍会把 90 秒的片段版借给 255 秒的原唱。用项目里
-            # 现成的 jy_isjunk 堵掉：候选是 片段/伴奏/翻唱/… 而目标不是，就不借
-            # （跟 jy_search_all 对 kw 源的处理一致）。这一层只是加严，不是模糊匹配。
-            if jy_isjunk(rec.get("song")) and not jy_isjunk(song):
-                continue
-            d = _jy_dur_secs(rec.get("dur"))
-            if d > 0:
-                durs.append(d)
-    if not durs:
-        return 0
-    durs.sort()
-    n = len(durs)
-    # 奇数取正中；偶数取中间两个的整除均值（不引入浮点，保证确定可复现）
-    return durs[n // 2] if n % 2 else (durs[n // 2 - 1] + durs[n // 2]) // 2
-
-
 # ---------------------------------------------------------------- 源A
 def jy_gqb_search(kw, limit=15):
     """源A（第三方站点）搜索 —— 接口占位（未实现）。
@@ -1666,6 +1651,124 @@ def jy_src_lookup(sid):
     return "", ""
 
 
+def _jy_mmss_secs(txt):
+    """'04:16' / '4:16' / '1:04:16' → 秒；认不出来返回 0。
+
+    源A详情页 appData 的 mp3_duration 就是这个格式（2026-11 实测
+    源A某首歌的详情页 → "04:16" = 256 秒，跟源B的 255/256 对得上）。
+    """
+    t = (txt or "").strip()
+    if not t:
+        return 0
+    try:
+        parts = [int(p) for p in t.split(":")]
+    except (TypeError, ValueError):
+        return 0
+    if not parts or any(p < 0 for p in parts):
+        return 0
+    secs = 0
+    for p in parts:
+        secs = secs * 60 + p
+    return secs
+
+
+def _jy_dur_secs(v):
+    """缓存里的 dur → 秒。wy/kw 存的是 int 秒，gqb 详情页存的是 'mm:ss' 字符串。
+
+    不管喂进来什么脏东西都返回 int，绝不抛 —— 点歌路径上不能因为一个时长字段 500。
+    """
+    if v is None or isinstance(v, bool):
+        return 0
+    if isinstance(v, (int, float)):
+        return int(v) if v > 0 else 0
+    t = str(v).strip()
+    if ":" in t:
+        return _jy_mmss_secs(t)
+    if not t:
+        return 0
+    try:
+        return int(float(t))
+    except (TypeError, ValueError):
+        return 0
+
+
+def jy_src_dur(sid):
+    """反查这首歌的真实时长（秒），三级递减，查不到返回 0。
+
+    一级 · 按 id 精确命中：扫 _jy_src_cache 找 rec["id"] == sid 的记录取 dur。
+        跟 jy_src_lookup 同源。wy / kw 源的记录带真实时长，命中就直接用。
+
+    二级 · 源A详情页缓存（"gqb_dur", mid）：
+        gqb 源的搜索页 HTML 里没有时长字段（实测全页 0 处 duration/时长），
+        但详情页 /music/<mid> 的 appData 里有 mp3_duration。jy_gqb_url() 本来
+        就要抓这个页面（取 play_id），顺手把时长存进缓存 —— 零额外请求。
+        stream 分支里 jy_resolve() 跑在 jy_src_dur() 之前，所以到这一步时
+        详情页通常已经抓过了。
+
+    三级 · 跨源兜底：gqb 记录本身 dur 恒 0，而 jy_search_all 是三源拿同一个
+        关键词并发搜、结果全在同一份缓存里，所以缓存里通常同时躺着同一首歌的
+        wy / kw 记录（带真实时长）。按 jy_norm 归一化后的**歌名 + 歌手严格相等**
+        去借；两个字段都要完全相等才认，不用 jy_score / 不用包含匹配 —— 这是
+        为了不把《孤勇者 萧忆情Alex》的时长借给《孤勇者 陈奕迅》。歌手为空的
+        一律不兜底（同名不同歌风险太大）。多个候选取中位数：wy 和 kw 对同一首歌
+        偶尔差 1~3 秒，取第一个会有随机性。
+
+    三级都拿不到（缓存过期 / 服务刚重启 / 源本身没有）就返回 0，前端有降级：
+    不显示总长、进度条按已播时间渐近、切歌靠设备回报的播放结束事件。
+    全程不发任何网络请求。
+    """
+    # ---- 一级：按 id 精确命中 ----
+    for v in _jy_src_cache.values():
+        lst = v[1]
+        if isinstance(lst, list):
+            for rec in lst:
+                if isinstance(rec, dict) and rec.get("id") == sid:
+                    d = _jy_dur_secs(rec.get("dur"))
+                    if d > 0:
+                        return d
+
+    # ---- 二级：源A详情页缓存（jy_gqb_url 顺手存的） ----
+    src, key = jy_src_of(sid)
+    if src == "gqb":
+        for k in (key, sid):
+            d = _jy_dur_secs(_jy_cache_get(("gqb_dur", k)))
+            if d > 0:
+                return d
+
+    # ---- 三级：跨源兜底，归一化后歌名 + 歌手严格相等 ----
+    song, artist = jy_src_lookup(sid)
+    if not song or not artist:
+        return 0
+    ns, na = jy_norm(song), jy_norm(artist)
+    if not ns or not na:
+        return 0
+    durs = []
+    for v in _jy_src_cache.values():
+        lst = v[1]
+        if not isinstance(lst, list):
+            continue
+        for rec in lst:
+            if not isinstance(rec, dict):
+                continue
+            if jy_norm(rec.get("song")) != ns or jy_norm(rec.get("artist")) != na:
+                continue
+            # jy_norm 会把括号里的内容抹掉（《孤勇者（片段）》→《孤勇者》），
+            # 所以光靠严格相等仍会把 90 秒的片段版借给 255 秒的原唱。用项目里
+            # 现成的 jy_isjunk 堵掉：候选是 片段/伴奏/翻唱/… 而目标不是，就不借
+            # （跟 jy_search_all 对 kw 源的处理一致）。这一层只是加严，不是模糊匹配。
+            if jy_isjunk(rec.get("song")) and not jy_isjunk(song):
+                continue
+            d = _jy_dur_secs(rec.get("dur"))
+            if d > 0:
+                durs.append(d)
+    if not durs:
+        return 0
+    durs.sort()
+    n = len(durs)
+    # 奇数取正中；偶数取中间两个的整除均值（不引入浮点，保证确定可复现）
+    return durs[n // 2] if n % 2 else (durs[n // 2 - 1] + durs[n // 2]) // 2
+
+
 def jy_best_match(cands, song, artist, floor=0.72):
     best, bs = None, 0.0
     for c in cands:
@@ -1754,18 +1857,19 @@ def jy_download(sid, prefer_name=None, song="", artist=""):
 # 用户的要求（2026-10-30）：「本地没有的歌，点播放只播，不许落盘；只有点下载才落盘」。
 # 落地方式：musictool 自己去上游取字节流、再原样吐给音箱（见 Handler._jy_stream）。
 #
-# ⚠ 为什么不能 302 到上游直链：源A走的是 源C-CDN 的 CDN，源C/源B都会校验
+# ⚠ 为什么不能 302 到上游直链：源A走的是 CDN 节点 的 CDN，源C/源B都会校验
 #   Referer，音箱拿着一条裸链去拉 → 403 或空流，用户看到的是「能播但一直静音」。
 #   所以必须由服务端带上游需要的 Referer/UA 自己代理，给音箱一个「稳定的本地地址」。
 #
-# ⚠ 无损必须回落下载：语音助手音箱不认 FLAC/APE/AIFF（06-xiaomusic补丁/_patch_xmstream.py
+# ⚠ 无损必须回落下载：音箱不认 FLAC/APE/AIFF（06-xiaomusic补丁/_patch_xmstream.py
 #   里记着实测：push FLAC 会 status=2 + position 恒 0，看着在播其实没声）。所以
 #   stream 模式一旦发现上游给的是无损，就要退回「下载 + xiaomusic 转 wav」那条路。
 _LOSSLESS_EXT = (".flac", ".ape", ".aiff", ".aif", ".wav")
 # 取流时要带的 Referer。
-# ⚠ 源A的直链实际落在 源C/源C-CDN 上，而**源C CDN 见到 上游站点 的 Referer
+# ⚠ 源A的直链实际落在 CDN 节点 上，而**源C CDN 见到 源A 的 Referer
 #   会直接 403**（和 fetch_bytes() 里那句注释是同一件事，2026-10-30 实测复现：
-#   不带 Referer 200 audio/mpeg 3.6MB，带 上游站点 Referer 403）。所以 gqb 这里留空。
+#   不带 Referer 200 audio/mpeg 3.6MB，带 gequbao Referer 403）。所以 gqb 这里留空。
+_STREAM_REFERER = {"gqb": "", "wy": "", "kw": ""}
 
 
 def _url_ext(u):
@@ -1941,7 +2045,7 @@ def jy_src_health():
 
 
 def fetch_bytes(url, referer=None, timeout=60):
-    """抓取二进制资源。源C CDN 对 上游站点 的 Referer 会返回 403，所以默认不带 Referer。"""
+    """抓取二进制资源。kuwo CDN 对 源A 的 Referer 会返回 403，所以默认不带 Referer。"""
     headers = {"User-Agent": UA}
     if referer:
         headers["Referer"] = referer
@@ -2119,7 +2223,20 @@ def score_result(r, artist_hint, song_hint):
 def match_assets(name):
     """给一首本地歌曲匹配封面+歌词"""
     raw = name
-    artist_hint, song_hint = split_title(name)
+    # v4.38：提示词改用 display_meta（内嵌 ID3 优先），别再只看文件名。
+    # 真实案例：`05 Ex-Otogibanashi.flac`（ID3 里歌手是 ryo (supercell)/かぐや(cv.夏吉ゆうこ)…）
+    # 按 split_title 拆出来只有歌名、**没有歌手**，于是只在歌名上比相似度 →
+    # 配到了另一个也叫 Otogibanashi 的歌（id 51285177 / Yusef Imamura&SANO），
+    # 封面缓存成了一只绿色蜥蜴（用户：「封面又被换了」）。
+    # 有 ID3 就用 ID3 的歌手去卡，同名的别人歌自然被 score 拦掉。
+    # 注意：先 song_meta 预热标签缓存，display_meta 才拿得到 ID3。
+    try:
+        song_meta(name)
+        artist_hint, song_hint = display_meta(name)
+    except Exception:
+        artist_hint, song_hint = split_title(name)
+    if not song_hint:
+        artist_hint, song_hint = split_title(name)
 
     best, results_used = None, None
     for q in candidate_queries(raw):
@@ -2158,7 +2275,7 @@ def match_assets(name):
         except Exception as e:
             log("fetch_song fail %r" % (e,))
 
-    # 2.5) 上游站点 没歌词（这首没被收录）→ 源B兜底，含翻译
+    # 2.5) gequbao 没歌词（这首没被收录）→ 源B兜底，含翻译
     if not lrc:
         try:
             lrc = nc_lyric(raw)
@@ -2417,6 +2534,51 @@ def _patch_trans(name, lrc, path=None):
     return patched
 
 
+def _lrc_title_mismatch(name, lrc):
+    """缓存歌词的「首行署名」跟这首歌对不上 → 判定为串词（v4.35）。
+
+    真实案例：`游戏-燕池.mp3`（文件名是「歌名-歌手」倒序）在 2026-10-24 那次匹配里被
+    源B兜底配成了同一歌手的另一首《人海》，写进 `cache/lrc/游戏-燕池.mp3.lrc`。
+    后来虽然给 `nc_lyric` 加了歌手闸，但**磁盘缓存是先写的、serve_lyric 又是盲发**，
+    于是一直错到今天（用户：「游戏-燕池 这首歌的歌词不对」）。
+
+    判据很克制，只在能确证时返回 True：
+      · 首行必须是 `[mm:ss]歌名 - 歌手` 这种署名行（很多歌词首行是「作词：xxx」，那种不管）；
+      · 拆出来的歌名/歌手，跟 display_meta 的（歌手, 歌名）两种顺序**都对不上**时才算串词。
+    对不上 → 删缓存重配一次；配不出来宁可没词，也别继续发错的。
+    """
+    try:
+        first = ""
+        for line in (lrc or "").splitlines():
+            t = re.sub(r"^\s*(\[[^\]]*\]\s*)+", "", line).strip()
+            if t:
+                first = t
+                break
+        if not first or " - " not in first:
+            return False
+        a, b = [x.strip() for x in first.split(" - ", 1)]
+        if not a or not b:
+            return False
+        art, song = display_meta(name)
+        ns, na = _nz(song), _nz(art)
+        na1, ns1 = _nz(a), _nz(b)          # 首行写法 = 「歌名 - 歌手」
+        hit = False
+        if ns and na:
+            hit = ((ns1 and (ns1 in ns or ns in ns1)) and (na1 and (na1 in na or na in na1)))
+            if not hit:                     # 也允许反过来写
+                hit = ((na1 and (na1 in ns or ns in na1)) and (ns1 and (ns1 in na or na in ns1)))
+        elif ns:
+            hit = bool(ns1 and (ns1 in ns or ns in ns1))
+        elif na:
+            hit = bool(na1 and (na1 in na or na in na1))
+        if not hit:
+            log("lrc title mismatch %r: cached=%r song=%r artist=%r"
+                % (name, first[:40], song, art))
+        return not hit
+    except Exception:
+        return False
+
+
 def serve_lyric(name):
     # 纯音乐（无歌词）标记：标了就直接返回空词，跳过缓存/旁置/联网匹配（省一次联网）。
     # 保持返回值为两元组（lrc, artist）—— /api/widget(5381) 与 TV 歌词(4969) 也调它，改签名会带坏它们。
@@ -2430,11 +2592,14 @@ def serve_lyric(name):
                 cached = f.read()
         except Exception:
             cached = ""
-        if not is_junk_lrc(cached):
+        # v4.35：缓存是「盲发」的 —— 只要不是空壳就直接返回。于是 10-24 那次被配错的
+        # 歌词（游戏-燕池 → 误配成《人海》）一直挂到今天。这里加一道署名校验：
+        # 首行的「歌名 - 歌手」跟这首歌对不上就当作脏缓存删掉，往下走重新匹配。
+        if not is_junk_lrc(cached) and not _lrc_title_mismatch(name, cached):
             return _patch_trans(name, cached, p), artist
-        try:                            # 占位/空壳缓存：删掉，否则这歌永远补不上词
+        try:                            # 占位/空壳/串词缓存：删掉，否则这歌永远补不上词
             os.remove(p)
-            log("lrc junk purge: %s" % name)
+            log("lrc purge: %s" % name)
         except Exception:
             pass
     # JY-SIDELRC: 同名 .lrc 优先，且写进缓存，下次直接命中（新导入的歌全靠这条路）
@@ -2445,6 +2610,19 @@ def serve_lyric(name):
             try:
                 os.remove(_sp)
                 log("lrc junk side purge: %s" % name)
+            except Exception:
+                pass
+        _side = ""
+    # v4.35：旁置歌词同样要过署名校验。真实案例：`/sdcard/Music/游戏-燕池.lrc` 是
+    # 10-27 那次「backfill beside lrc」把**当时配错的缓存**倒写回音乐目录的，于是
+    # 每次 serve_lyric 都把它当权威读回来、再写回缓存 —— 错的词自己复制自己，
+    # 删缓存也没用（本轮实测）。这种文件同样要删掉重配。
+    if _side and _lrc_title_mismatch(name, _side):
+        _sp2 = _side_lrc_path(name)
+        if _sp2:
+            try:
+                os.remove(_sp2)
+                log("lrc side title mismatch purge: %s" % name)
             except Exception:
                 pass
         _side = ""
@@ -2804,7 +2982,7 @@ def refresh_backend():
     因此不会触发 do_check_cmd 的 group_force_stop_xiaoai()，正在播的歌不会被打断。
     """
     try:
-        with urllib.request.urlopen(BACKEND_API + "/jygenlist", timeout=30) as r:
+        with urllib.request.urlopen(XIAOMUSIC_API + "/jygenlist", timeout=30) as r:
             j = json.loads(r.read().decode("utf-8", "ignore") or "{}")
         if str(j.get("ret") or "") != "OK":
             log("refresh(jygenlist) ret=%r" % (j.get("ret"),))
@@ -3603,7 +3781,7 @@ def axis_box_pos(name):
         return None, 0
     t0 = time.time()
     try:
-        d = json.loads(_http_get(BACKEND_API + "/playingmusic?did="
+        d = json.loads(_http_get(XIAOMUSIC_API + "/playingmusic?did="
                                  + urllib.parse.quote(did), timeout=3))
     except Exception:
         return None, 0
@@ -3695,7 +3873,7 @@ def axis_worker():
 
 # ---------------------------------------------------------------- 电视跟轴（歌词屏）
 # 电视是 DLNA 渲染器：投过去之后它自己从头拉流，协议里没有「同步」这个字段。
-# 实测（某品牌电视 / hyperDLNA）「命令发出 → 真的出声」固定慢 3.5 秒左右，
+# 实测（ S55 / hyperDLNA）「命令发出 → 真的出声」固定慢 3.5 秒左右，
 # 而且它一旦和组播音乐各走各的，就永远差这 3.5 秒，越听越飘。
 # 唯一能做的：反复量它的 RelativeTimePosition，跟组播时间轴比，偏了就 Seek 拉回来。
 #
@@ -3737,7 +3915,7 @@ def lan_ip():
 
 def xm_post(path, obj, timeout=8):
     data = json.dumps(obj).encode("utf-8")
-    req = urllib.request.Request(BACKEND_API + path, data=data,
+    req = urllib.request.Request(XIAOMUSIC_API + path, data=data,
                                  headers={"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8", "ignore"))
 
@@ -3745,7 +3923,7 @@ def xm_post(path, obj, timeout=8):
 def tv_status(rid):
     """读一台 DLNA 渲染器的状态；拿不到返回 None"""
     try:
-        d = json.loads(_http_get(BACKEND_API + "/dlna/status?renderer="
+        d = json.loads(_http_get(XIAOMUSIC_API + "/dlna/status?renderer="
                                  + urllib.parse.quote(rid), timeout=4))
     except Exception as e:
         TVF["err"] = "status %r" % (e,)
@@ -3759,7 +3937,7 @@ def tv_status(rid):
 def tv_renderers():
     """DLNA 渲染器列表（xiaomusic 内部缓存 60 秒，这里不会每次 SSDP）"""
     try:
-        d = json.loads(_http_get(BACKEND_API + "/dlna/renderers", timeout=6))
+        d = json.loads(_http_get(XIAOMUSIC_API + "/dlna/renderers", timeout=6))
         return d.get("list") or []
     except Exception:
         return []
@@ -3981,7 +4159,7 @@ def _tvf_ref(g):
         did = xm_mi_did()
         if did:
             try:
-                d = json.loads(_http_get(BACKEND_API + "/playingmusic?did="
+                d = json.loads(_http_get(XIAOMUSIC_API + "/playingmusic?did="
                                          + urllib.parse.quote(did), timeout=6))
             except Exception:
                 # 问不到（编码时 CPU 打满、接口超时）→ 这一拍跳过，别下结论
@@ -4558,15 +4736,16 @@ def cached_tags(name):
         return _meta_cache.get(name) or {}
 
 
-# 下载器会把源站占位词写进内嵌标签（"kuwo" 之类），实测有歌的 artist / title /
-# album 全被写成同一个占位词，列表就显示成「kuwo - kuwo」、专辑栏也成了「kuwo」。
+# JY-TAGFIX v4.36：下载器会把源站占位词写进内嵌标签。实测曲库 579 首里有 7 首
+# （"Rather Be .flac"、"往后余生.mp3"、幾首結束バンド/MyGO!!!!! …）的
+# artist / title / album 全被写成 "kuwo"，列表就显示成「kuwo - kuwo」。
 # 只在这里挡「展示用元数据」，不动 read_tags() 和 jy_meta.json —— 时长、码率、
 # 封面还得照常读标签，缓存也不用重建。
 _JY_TAG_JUNK = {
     "kuwo", "kugou", "gequbao", "netease", "qqmusic", "qq音乐", "酷我", "酷狗",
     "网易云", "歌曲宝", "unknown", "未知", "未知艺术家", "未知标题", "未知专辑",
     "未知歌手", "无标题", "none", "null", "n/a", "未命名",
-    # 下载器自带的英文占位最常见，之前只收了 "unknown"，"Unknown Artist"
+    # v4.41：下载器自带的英文占位最常见，之前只收了 "unknown"，"Unknown Artist"
     # 这种带后缀的整串漏网，列表里照样显示。注意别加 "various artists"——
     # 合辑的 artist 真值就是这个。
     "unknown artist", "unknown title", "unknown album", "unknownartist",
@@ -4626,7 +4805,7 @@ def display_meta(name):
 
 def display_album(name):
     """展示用的专辑名。占位词（kuwo / Unknown Album …）一律返回空串。
-    以前只有 artist/title 过过滤，album 原样透传，列表里出现「kuwo」当专辑。"""
+    v4.41：以前只有 artist/title 过过滤，album 原样透传，列表里出现「kuwo」当专辑。"""
     a = cached_tags(name).get("album")
     return "" if _tag_junk(a) else str(a or "").strip()
 
@@ -4685,6 +4864,7 @@ def _bump_cover_meta(name, src, w, ncid=None):
             row["ncid"] = ncid
 
 
+NC_HEADERS = {"User-Agent": UA, "Referer": ""}
 
 
 def nc_get(url, timeout=12):
@@ -4800,7 +4980,7 @@ def nc_lyric(name):
 
 
 # ---------------------------------------------------------------- 歌词译文补全
-# 主源 上游站点 只给原文，源B才有 tlyric，而源B原本只在「上游站点 完全没词」时
+# 主源 gequbao 只给原文，源B才有 tlyric，而源B原本只在「gequbao 完全没词」时
 # 才被调用 —— 于是「有原文、没译文」的歌永远等不到翻译。
 # 这里反过来：拿已在用的原文当底稿，把源B译文按**文本锚点**挂回本地时间戳上
 # （两个源的歌词行切分常常不一样，不能直接按时间戳相等去合）。
@@ -5516,7 +5696,11 @@ def search_local(kw, limit=30):
         sc = fuzzy_match(fn, kw)
         if sc <= 0:
             continue
-        artist, song = split_title(fn)
+        # v4.34：改用 display_meta（内嵌 ID3 优先，剥曲目号）——「01 Remember.flac」这类
+        # 文件名没按「歌手 - 歌名」命名的，split_title 会退化成「01 Remember / 空歌手」，
+        # 和 /api/local 显示不一致。先 song_meta 预热标签缓存，display_meta 才能拿到 ID3。
+        song_meta(fn)
+        artist, song = display_meta(fn)
         rows.append({
             "name": fn,
             "song": song or clean_query(fn),
@@ -5603,7 +5787,7 @@ def _stop_if_current(name):
     try:
         did = _default_did()
         with urllib.request.urlopen(
-                BACKEND_API + "/playingmusic?did=" + urllib.parse.quote(did), timeout=4) as r:
+                XIAOMUSIC_API + "/playingmusic?did=" + urllib.parse.quote(did), timeout=4) as r:
             pm = json.loads(r.read().decode("utf-8", "ignore") or "{}")
         cur = str(pm.get("cur_music") or "")
         if not cur:
@@ -5611,7 +5795,7 @@ def _stop_if_current(name):
         base = os.path.splitext(os.path.basename(name or ""))[0]
         if cur == name or os.path.splitext(cur)[0] == base:
             req = urllib.request.Request(
-                BACKEND_API + "/device/stop",
+                XIAOMUSIC_API + "/device/stop",
                 data=json.dumps({"did": did}).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST")
@@ -5652,7 +5836,7 @@ def widget_state(did="", host="127.0.0.1"):
     pm = {}
     try:
         with urllib.request.urlopen(
-                BACKEND_API + "/playingmusic?did=" + urllib.parse.quote(did), timeout=4) as r:
+                XIAOMUSIC_API + "/playingmusic?did=" + urllib.parse.quote(did), timeout=4) as r:
             pm = json.loads(r.read().decode("utf-8"))
     except Exception:
         pm = {}
@@ -6357,6 +6541,7 @@ def src_lastfm(prof):
 
 
 # ---------- 源B（公开 feed，无需登录） ----------
+_NC_HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": ""}
 
 
 # ---------- 源B weapi 加密（纯 Python，零依赖） ----------
@@ -6380,6 +6565,26 @@ _NC_SBOX = [
     0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
     0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 ]
+
+
+
+
+
+
+
+
+
+
+_NC_WEAPI_MODULUS = ("00e0b509f6259df8642dbc35662901477df22677ec152b5ff68ace615bb7b725152b3"
+                     "ab17a876aea8a5aa76d2e417629ec4ee341f56135fccf695280104e0312ecbda92557"
+                     "c93870114af6c9d05c4f7f0c3685b7a46bee255932575cce10b424d813cfe4875d3e82"
+                     "047b97ddef52741d546b8e289dc6935b3ece0462db0a22b8e7")
+_NC_WEAPI_PUBKEY = "010001"
+_NC_WEAPI_SECRET = b"aPcY7aWgUK3Fa3g6"   # 第二层 AES 固定密钥
+
+
+
+
 
 
 def _netease_weapi(url, body, cookie):
@@ -6406,6 +6611,20 @@ def src_netease(prof):
     """
 # [integration-point]
     return ([], {})
+
+
+# ---------- 源D（公开排行榜 feed 无需登录；登录 cookie 可开个性化每日推荐） ----------
+_QQ_HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": ""}
+_QQ_SIGN_SALT = "CJBPACrRuNy7"
+_QQ_RND_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+
+
+
+
+
+
 
 
 def src_qqmusic(prof):
@@ -6559,7 +6778,7 @@ def _resolve_external(sug_all, pool, seen, kw_w, cap=4):
     解析不到就丢（不造歌）。两种都保证最终列表 100% 在候选池内。
 
     cap（v4.00：14 → 4）：**这里才是每日推荐冷算 12 秒的最大来源**。
-    每个「落地」都要一次 search()，而全局 上游站点 名额只有 2 个（`_lock`），
+    每个「落地」都要一次 search()，而全局 gequbao 名额只有 2 个（`_lock`），
     单次上游 1~5 秒。14 个 × 平均 1.5 秒 ÷ 2 并发 ≈ 10 秒，全花在给外部建议
     「找落地」上 —— 可是每首只回 2 条结果，对最终 12 首的贡献极低（绝大多数
     外部建议本来就已经被主搜索捞进池子了，那一支只打标记、不联网）。
@@ -6648,7 +6867,7 @@ _THEME_SCENE = {
     "运动": {"genres": {"电子", "摇滚", "说唱"}, "kw": ("运动", "健身", "跑步", "workout", "run", "gym", "party", "dance", "energy", "动感")},
     "治愈": {"genres": {"民谣", "纯音乐"}, "kw": ("治愈", "温暖", "comfort", "warm", "heal", "温柔", "晚安")},
     "怀旧": {"genres": {"民谣", "古典"}, "kw": ("怀旧", "青春", "回忆", "nostalg", "old", "classic", "老歌")},
-    # 下面三个是「把卡数撑起来」补的场景分类（通勤 / 旅行这类通用场景）；
+    # 下面三个是「把卡数撑起来」补的（QQ 的场景分类里也有通勤/旅行）；
     # 命中不了就自动不出卡，不会留空壳。
     "通勤": {"genres": {"流行", "电子"}, "kw": ("通勤", "路上", "地铁", "公交", "开车", "drive", "commute", "radio", "电台")},
     "旅行": {"genres": {"民谣"}, "kw": ("旅行", "出发", "远方", "journey", "travel", "road", "旅途")},
@@ -6656,7 +6875,7 @@ _THEME_SCENE = {
 }
 
 
-# QQT: 歌单标题库 —— 按「分类歌单」的口径起名（场景 + 语种 + 曲风）。
+# QQT: 歌单标题库 —— 照 源D「分类歌单」的口径起名。
 # QQ 的分类维度只有四类：**语种（国语/粤语/英语/日语/韩语）、场景（通勤/学习工作/
 # 咖啡馆/运动/睡前/旅行/派对）、心情（治愈/伤感/励志/安静…）、流派（流行/电子/
 # 民谣/说唱/摇滚/爵士/R&B…）**，卡面一律「主标题 + 一句副标题」
@@ -7017,7 +7236,8 @@ def _local_tag_order(rows, tags):
     return hit + neu + bad
 
 
-# ==jy_card_proof== 逐首主题校对（v4.30）：歌单卡里的歌必须真贴合主题
+# ==================== JY-CARD-PROOF（v4.30）====================
+# 歌单歌曲校对：每张主题卡组装时，逐首核对「这首歌到底贴不贴这张卡的主题」。
 # 不贴的（靠标签词混进来的、曲风明显矛盾的）直接剔掉；校完不足 3 首的整卡丢，
 # 别留一张「主题歌单」里塞两首跑题歌的残缺卡。derive 卡是「今日/新发现」这类
 # 混合清单，本来就不该有单一主题，不校。
@@ -7043,8 +7263,11 @@ def _card_song_fits(c, key):
         h = _THEME_SCENE.get(s)
         if not h:
             return True
+        # 真主题命中：曲风 ∈ 场景曲风 或 歌名/标题关键词命中（不看标签词，
+        # 不然选中标签时标签词会把跑题歌混进场景卡）
         if not _theme_match(c, h["genres"], h["kw"]):
             return False
+        # 曲风矛盾负向闸：只有歌自带曲风字段才判，没标的歌一律放行（在线歌大多没标曲风）
         g = (c.get("genre") or "").strip()
         if g:
             if s in _SCENE_CALM and g in _ENERGETIC_GENRES:
@@ -7245,7 +7468,8 @@ def build_themed_playlists(pool, local_rows, prof=None, daily_seed="", want=12, 
             ranked = mmr_rerank(rows2, lambda_=0.6, daily_seed=daily_seed, limit=12,
                                 max_per_artist=2, max_per_genre=3)
         ranked = _dedupe_titles(ranked, 10)
-        # ==jy_card_proof== 逐首主题校对：把跑题的歌剔出本卡
+        # ==jy_card_proof== 逐首主题校对：把不贴这张卡主题的歌剔掉
+        # （含靠标签词混进来的、曲风明显矛盾的），校完不足 3 首的整卡丢
         ranked = [c for c in ranked if _card_song_fits(c, key)]
         songs = [_strip_priv(c) for c in ranked]
         if len(songs) >= 3:
@@ -7422,6 +7646,12 @@ def _load_daily_disk():
             return
         if not _disk_key_is_default(d.get("key")):
             return                     # 旧档/带标签的档不用（见 _disk_key_is_default）
+        # v4.35：online 为空的是「降级档」（源A 520 熔断时算出来的空列表）。
+        # 以前照读不误 —— 一次上游抽风就把当天的每日推荐钉成空，用户重开还是空的。
+        # 这种档直接弃用：不删文件（下次成功落盘会覆盖），只是不让它顶到前台。
+        if not ((d.get("out") or {}).get("online") or []):
+            log("daily_rec.json: online 为空（降级档），跳过加载，等重算")
+            return
         with _data_lock:
             _daily_cache["key"] = d.get("key", "")
             _daily_cache["out"] = d.get("out")
@@ -7458,6 +7688,12 @@ def _save_daily_disk(force=False):
         with _data_lock:
             _k = _daily_cache.get("key", "")
             if not _disk_key_is_default(_k):
+                return
+            _o = _daily_cache.get("out") or {}
+            # v4.35：online 为空 = 上游当时不可用（源A 520 熔断）的降级结果，
+            # 绝不能落盘 —— 否则当天再也算不出在线歌，用户重开也还是空。宁可这次不写。
+            if not (_o.get("online") or []):
+                log("skip save daily_rec.json: online 为空（降级档）")
                 return
             payload = {"date": today, "key": _k,
                        "out": _daily_cache.get("out"), "all": _daily_cache.get("all")}
@@ -7968,6 +8204,23 @@ def _unadjacent(head, per=2, pool=None):
             head[i], head[j] = head[j], head[i]
             moved = True
             break
+        if not moved:
+            # ①c 尾段补位（v4.35）：i 已经走到底时 ① 的 j 范围是空的，永远换不动，
+            # 于是「最后两首同一个人」一直躲不掉（实测 12 首里第 11/12 都是「阿铭」）。
+            # 往后没位置就**往前换**：把 head[i] 塞进前面的空档，一样能拆开相邻。
+            # j 不能取到 i-2 —— 那样 head[i] 会落到 i-1 旁边，还是撞，白折腾。
+            for j in range(0, max(0, i - 2)):
+                if clash(head[i - 1], head[j]):
+                    continue
+                if j > 0 and clash(head[j - 1], head[i]):
+                    continue
+                if clash(head[j + 1], head[i]):
+                    continue
+                if i + 1 < n and clash(head[j], head[i + 1]):
+                    continue
+                head[i], head[j] = head[j], head[i]
+                moved = True
+                break
         if moved:
             continue
         for k, c in enumerate(spare):                  # ② 再拿池子里没进头的换
@@ -8242,10 +8495,14 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
     rec_t0 = time.time()
     if daily:
         with _data_lock:
+            _hit = None
             if _daily_cache["key"] == key and _daily_cache["out"]:
                 _hit = _daily_cache["out"]
-            else:
-                _hit = None
+                # v4.35：online 为空的降级结果只在 90 秒内顶着用（防止同一瞬间几十个
+                # 请求各自重算 12 秒）；过了就重新算 —— 否则上游恢复之后界面还是空的。
+                if not _hit.get("online") and \
+                        (time.time() - float(_daily_cache.get("degraded_at") or 0.0)) > 90.0:
+                    _hit = None
         if _hit is not None:
             return _ensure_topics_in(_hit, tags)
         _hot = _slot_get(key)                 # 多槽：切标签再切回来直接命中，不重算
@@ -8389,6 +8646,65 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
             _apply_genre_hints(pool[_n0:], genre_hints)
             _apply_tag_bonus(pool[_n0:], tags)
         pool_u = _dedupe_titles(sorted(pool, key=lambda c: -(c.get("rel") or 0)), 10 ** 6)
+    # v4.35：三源兜底。源A一熔断（HTTP 520 → BRK 冷却，冷却期 search() 一次网络都不发、
+    # 恒回空），整块在线池就归零，用户看到的是「为你推荐的在线歌曲」一片空白 —— 而交互式
+    # 搜索（/api/search）走的是 jy_search_all，同样的时候照样能出歌。这里把同一条路接进来：
+    # 池子不够就用 wy/kw 补，id 形如 "kw:xxx"/"wy:xxx"，播放/下载本来就支持（jy_src_of）。
+    # 只在**真的不够首屏**时才补（< limit），别在池子还有二十几首时白跑几趟搜索。
+    if len(pool_u) < limit:
+        try:
+            from concurrent.futures import ThreadPoolExecutor as _TPE3
+            # 关键词 = 前 3 个口味词 + 一把「热门歌曲」。
+            # 加通用种子是必须的：口味词全指向同一个歌手时（实测「源B游戏」连着 4 首），
+            # 池子里只有一个歌手，右栏「同一歌手最多 2 首 / 不挨着」这条硬约束必然被冲破，
+            # 整屏变成一个人的歌单。通用种子把池子摊开。
+            # 并发跑：jy_search_all 内部已按源并发，但它是串行的一趟 3.2 秒，四个词串起来
+            # 就是十几秒，前台请求等不起。
+            _fb_kws = list(kws)[:3] + [u"热门歌曲"]
+            with _TPE3(max_workers=4) as _ex3:
+                _lists = list(_ex3.map(lambda _k: jy_search_all(_k, limit=8) or [], _fb_kws))
+            _seen2, _fb2, _art_cnt = set(), [], {}
+            for _k, _rows in zip(_fb_kws, _lists):
+                for _r in _rows:
+                    _bid = _r.get("id")
+                    if not _bid or _bid in seen or _bid in _seen2:
+                        continue
+                    _sname = _r.get("song") or _r.get("title") or ""
+                    # 源C的有声书/广播剧/评书特别多（实测「葬神棺 0001集」「第二季219 千影战将」
+                    # 「第12回」），这是推荐位，不是搜索框：用户没主动找，别把听书塞进来。
+                    if re.search(r"\d+\s*[集章回话期]|有声|听书|广播剧|相声|评书"
+                                 r"|第[0-9一二三四五六七八九十百千]+[季部卷集章回话期]", _sname):
+                        continue
+                    # 兜底池自己就先按「同一歌手最多 2 首」收口 —— 交给后面的
+                    # _head_spread 去限制已经晚了：池子里本来就只有一个歌手，
+                    # MMR 凑不满 12 首只能放宽约束，观感立刻变成一个人的歌单。
+                    _ak = _norm_key(_r.get("artist") or "")
+                    if _ak and _art_cnt.get(_ak, 0) >= 2:
+                        continue
+                    if _ak:
+                        _art_cnt[_ak] = _art_cnt.get(_ak, 0) + 1
+                    _seen2.add(_bid)
+                    _fb2.append({
+                        "id": _bid,
+                        "song": _sname,
+                        "artist": _r.get("artist") or "",
+                        "title": _r.get("title") or "",
+                        "dur": _r.get("dur") or 0,
+                        "cover": _r.get("cover") or "",
+                        "source": _r.get("src") or "",
+                        "_w": 0.40, "_by": _k,
+                    })
+            if _fb2:
+                _n2 = len(_fb2)
+                pool.extend(_fb2)
+                score_candidates(pool[-_n2:], prof)
+                _apply_genre_hints(pool[-_n2:], genre_hints)
+                _apply_tag_bonus(pool[-_n2:], tags)
+                pool_u = _dedupe_titles(sorted(pool, key=lambda c: -(c.get("rel") or 0)), 10 ** 6)
+                log("REC fallback jy_search_all: +%d（源A池不足），pool=%d"
+                    % (_n2, len(pool_u)))
+        except Exception as e:
+            log("REC fallback jy_search_all: %r" % (e,))
     # 一次排到 60 条存进全量池（够前端「加载更多」翻好几轮），out 只取前 limit 条。
     # 两处指向同一批 dict，所以下面补 online/cover 字段时 all 里也一起有了。
     _want_all = max(limit, min(len(pool_u), 60))
@@ -8408,8 +8724,13 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
     #              不要拼绝对地址：这份结果有按天的缓存，写死 IP 换个网段就废了。
     for _c in _all_online:
         _c["online"] = True
-        if _c.get("id"):
-            _c["cover"] = "/api/online_cover?id=" + urllib.parse.quote(str(_c["id"]), safe="")
+        # v4.35：只有「还没有封面」+ 能取到图的 id 才拼 online_cover。
+        # 实测：纯数字（源A）→ 200 图；`wy:` → 200 真封面（370KB）；`kw:` → 404（源C搜索
+        # 接口 PICPATH/albumpic 全空，拿不到）。所以 wy 也要拼，只有 kw 留空让前端画「♪」。
+        if _c.get("id") and not _c.get("cover"):
+            _cid = str(_c["id"])
+            if _cid.isdigit() or _cid.lower().startswith("wy:"):
+                _c["cover"] = "/api/online_cover?id=" + urllib.parse.quote(_cid, safe="")
 
     local_rows, seenl = [], set()
 
@@ -8447,7 +8768,10 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
             if n in seenl:
                 continue
             seenl.add(n)
-            a0, s0 = split_title(n)
+            # v4.34：同 search_local —— 本地兜底项也用 display_meta(内嵌标签优先)，
+            # 别把「01 Remember.flac」显示成「01 Remember / 未知歌手」（与 /api/local 对齐）
+            song_meta(n)
+            a0, s0 = display_meta(n)
             local_rows.append({"name": n, "song": s0 or clean_query(n), "artist": a0,
                                "playlist": "", "score": 0, "_w": 0.35})
     score_candidates(local_rows, prof)
@@ -8470,7 +8794,7 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
     for _c in _all_local:
         if _c.get("name"):
             _c["cover"] = "/api/cover?name=" + urllib.parse.quote(_c["name"], safe="")
-    # 主题歌单卡：把候选池聚成「曲风/场景/语种/歌手/派生」卡（PC 端与 App 端各自渲染）。
+    # 主题歌单卡：把候选池聚成「曲风/场景/语种/歌手/派生」卡（PC 照 源D、App 照音乐渲染）。
     # 仍 100% 来自候选池，没有的就丢，不造歌。
     # 主题歌单分两段：
     #   ① 每日主题（JY-TOPIC）—— 按当天节日/热点关键词直接搜出来的歌，排在最前面，
@@ -8522,19 +8846,27 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
         out["playlists"] = out["playlists"][:-1]
     _allp = {"online": _all_online, "local": _all_local}
     if daily:
+        # v4.35：online 为空的降级结果 —— 只放内存顶 90 秒，**不入槽、不落盘**。
+        # 以前照写，于是一次源A 520 就把「今天的推荐」永久钉成空列表：
+        # 用户重开 PC / 重进 App 还是空的，上游其实早就恢复了。
+        _degraded = not _all_online
         with _data_lock:
             _daily_cache["key"] = key
             _daily_cache["out"] = out
             # 全量池给「加载更多」用；曲库/口味变了下一轮 recommend 会整个换掉
             _daily_cache["all"] = _allp
-        # JY-SLOT：多留一份（切标签再切回来命中的就是它）
-        _slot_put(key, out, _allp)
-        # JY-A5：冷算成功立刻落盘一次 —— 进程重启/部署不用再算 12 秒。
-        # 有节流：_save_daily_disk 自己带 30 秒最小间隔（见该函数说明）。
-        try:
-            _save_daily_disk()
-        except Exception:
-            pass
+            _daily_cache["degraded_at"] = (time.time() if _degraded else 0.0)
+        if _degraded:
+            log("REC degraded: online=0（上游不可用），不落盘不入槽，90 秒后可重算")
+        else:
+            # JY-SLOT：多留一份（切标签再切回来命中的就是它）
+            _slot_put(key, out, _allp)
+            # JY-A5：冷算成功立刻落盘一次 —— 进程重启/部署不用再算 12 秒。
+            # 有节流：_save_daily_disk 自己带 30 秒最小间隔（见该函数说明）。
+            try:
+                _save_daily_disk()
+            except Exception:
+                pass
     log("REC timing: TOTAL=%.2fs online=%d local=%d tags=%s"
         % (time.time() - rec_t0, len(out["online"]), len(out["local"]),
            ",".join(tags) or "-"))
@@ -8576,9 +8908,19 @@ def _rec_warmer(interval=900, first_delay=1):
             for _lim in (10, 12):
                 for _tm in ("auto", None):
                     try:
-                        recommend_sf(None, _lim, tags=[], seed="", likes=[], tagmode=_tm)
+                        _wr = recommend_sf(None, _lim, tags=[], seed="", likes=[], tagmode=_tm)
                     except Exception as _e:
                         log("REC warmer(%s,%s) fail: %r" % (_lim, _tm, _e))
+                        continue
+                    # v4.35：第一把就算出「没有在线歌」（源A 520 熔断）时别再跑后面三把 ——
+                    # 四把一模一样的搜索串起来，等于往一个正在限流的上游再压 4 倍的请求，
+                    # 结果还是空，还把内存/槽搅得更乱。降级时就热一把，恢复后自然回到四把。
+                    if _wr and not (_wr.get("online") or []):
+                        log("REC warmer: 降级（online=0），本轮只热一把就收手")
+                        break
+                else:
+                    continue
+                break
             log("REC warmer: refreshed daily cache")
         except Exception as e:
             log("REC warmer error: %r" % (e,))
@@ -8596,7 +8938,7 @@ def _rec_warmer(interval=900, first_delay=1):
 def _xm_status(did):
     """读 xiaomusic 设备状态；失败返回 None"""
     try:
-        url = BACKEND_API + "/getplayerstatus?did=" + urllib.parse.quote(did or "")
+        url = XIAOMUSIC_API + "/getplayerstatus?did=" + urllib.parse.quote(did or "")
         with urllib.request.urlopen(url, timeout=8) as r:
             return json.loads(r.read().decode("utf-8"))
     except Exception:
@@ -8621,7 +8963,7 @@ _vol_lock = threading.Lock()
 def _vol_push(did, vol):
     try:
         body = json.dumps({"did": did, "volume": int(vol)}).encode()
-        req = urllib.request.Request(BACKEND_API + "/setvolume", data=body,
+        req = urllib.request.Request(XIAOMUSIC_API + "/setvolume", data=body,
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as r:
             return json.loads(r.read().decode("utf-8", "ignore") or "{}")
@@ -8659,8 +9001,8 @@ def autofix():
     顺序很关键：xiaomusic 重启会丢设备绑定，所以 heal 必须在所有重启之后。
     ① 服务可达 → 不可达就重启
     ② 设备绑定自愈（重启后必丢，每次都修）
-    ③ 音量为 0 → 恢复 60；下发恢复播放
-    ④ 进度前进 → 修复成功
+    ③ 音量为 0 → 恢复 60（读不到音量时跳过，绝不按 0 处理）
+    ④ 不主动恢复播放（修复只修绑定/音量，要不要接着放由用户决定）→ 修复成功
     ⑤ 没在播且无播放任务 → 服务层正常，提示直接点歌
     ⑥ 有任务但卡住 → 重启 → 再 heal → 再试
     ⑦ 仍不行 → 登录态大概率失效，提示重新授权
@@ -8694,7 +9036,7 @@ def autofix():
 
         def heal_bind():
             try:
-                with urllib.request.urlopen(BACKEND_API + "/dev/heal", timeout=60) as r:
+                with urllib.request.urlopen(XIAOMUSIC_API + "/dev/heal", timeout=60) as r:
                     res = json.loads(r.read().decode("utf-8"))
                 if res.get("ok"):
                     steps.append("设备绑定自愈 ✓")
@@ -8706,42 +9048,62 @@ def autofix():
                 return False
 
         def try_resume():
-            try:
-                vol = int((_xm_status(did) or {}).get("volume") or 0)
-                if vol == 0:
+            # JY-AUTOFIXVOL：只读一次设备状态，音量与进度都用它，别让两次请求互相打架。
+            # 关键修正：_xm_status() 读不到时返回 None（不是空 dict）。旧写法
+            # `int((_xm_status(did) or {}).get("volume") or 0)` 会把「读不到」当成
+            # 「音量为 0」，接着按「音量为 0 → 恢复到 60」分支走，还顺手下发恢复播放
+            # —— 用户按一次一键修复，音箱就从正常音量炸到 60 并自己响起来。
+            # 这里必须把三种情况分开：读不到 / 确实是 0 / 大于 0。
+            _st = _xm_status(did)
+            _vol = None
+            if isinstance(_st, dict):
+                try:
+                    _vol = int(_st.get("volume"))
+                except (TypeError, ValueError):
+                    _vol = None
+
+            if _vol is None:
+                # 读不到音量（服务不可达，或返回里压根没有 volume 字段）：
+                # 不碰设备、不下发播放，只留痕，然后继续走后面其它自检项。
+                log("autofix: 读不到设备状态，跳过音量恢复与恢复播放")
+                steps.append("读不到设备状态 → 跳过音量恢复与恢复播放")
+                if not isinstance(_st, dict):
+                    # 状态完全读不到 → 进度也不可能读到，别白等 4 秒再问一次
+                    return False, 0, 0
+            elif _vol == 0:
+                # 能读到、且确实是 0：这才是真的没声音，恢复到 60
+                try:
                     body = json.dumps({"did": did, "volume": 60}).encode()
                     req = urllib.request.Request(
-                        BACKEND_API + "/setvolume", data=body,
+                        XIAOMUSIC_API + "/setvolume", data=body,
                         headers={"Content-Type": "application/json"})
                     urllib.request.urlopen(req, timeout=10).read()
                     steps.append("音量为 0 → 恢复到 60")
-            except Exception as e:
-                steps.append("音量恢复失败 %r" % (e,))
-            try:
-                with urllib.request.urlopen(
-                        BACKEND_API + "/playingmusic?did=" + urllib.parse.quote(did),
-                        timeout=20) as r:
-                    r.read()
-                steps.append("下发恢复播放 ✓")
-            except Exception as e:
-                steps.append("恢复播放失败 %r" % (e,))
-            p1 = _xm_position(did)
-            time.sleep(4)
-            p2 = _xm_position(did)
-            return p2 > p1, p1, p2
+                except Exception as e:
+                    steps.append("音量恢复失败 %r" % (e,))
+            # _vol > 0：音量正常，一个字节都不改
+
+            # JY-AUTOFIX-NORESUME：「一键修复」只修绑定/音量，**不主动恢复播放**。
+            # 原来的逻辑是「读得到状态就下发 /playingmusic」—— 用户按一次修复，音箱就
+            # 自己响起来（正是「我没让它放它自己响了」的另一半来源）。修好后要不要接着放，
+            # 该由用户自己决定，而不是 autofix 替他下指令。这里只留痕、不再下发。
+            steps.append("已修复（不自动恢复播放，请手动点播）")
+            # 不再用「进度有没有前进」当成功判据（那只有在真在播时才前进）。改成：
+            # 能读到设备状态 = 服务与绑定是通的 = 修复达成。返回 ok=True 让 autofix 直接收尾，
+            # 而不是掉进「歌曲任务卡住 → 重启 xiaomusic」的多余重启。
+            return True, 0, 0
 
         # 重启后设备绑定必丢，先修一次
         heal_bind()
 
         ok, p1, p2 = try_resume()
         if ok:
-            steps.append("进度恢复前进 %ds→%ds ✓" % (p1, p2))
-            return {"ok": True, "fixed": True, "steps": steps, "report": "已自动修复，恢复播放"}
+            return {"ok": True, "fixed": True, "steps": steps, "report": "已自动修复（不自动恢复播放，请手动点播）"}
 
         # 没在播：看是不是根本没有播放任务（服务层其实是好的）
         try:
             with urllib.request.urlopen(
-                    BACKEND_API + "/playingmusic?did=" + urllib.parse.quote(did),
+                    XIAOMUSIC_API + "/playingmusic?did=" + urllib.parse.quote(did),
                     timeout=10) as r:
                 pm = json.loads(r.read().decode("utf-8"))
         except Exception:
@@ -8761,12 +9123,11 @@ def autofix():
         heal_bind()
         ok, p1, p2 = try_resume()
         if ok:
-            steps.append("重启后进度前进 %ds→%ds ✓" % (p1, p2))
-            return {"ok": True, "fixed": True, "steps": steps, "report": "重启后已恢复播放"}
+            return {"ok": True, "fixed": True, "steps": steps, "report": "服务已重启修复（不自动恢复播放，请手动点播）"}
 
         steps.append("重启后仍未播放")
         return {"ok": False, "fixed": False, "steps": steps,
-                "report": "自动修复未成功，多半是设备端登录态失效 —— 请到设置里点「重新授权登录」"}
+                "report": "自动修复未成功，多半是登录态失效 —— 请到设置里点「重新授权登录」"}
 
 
 
@@ -8787,7 +9148,7 @@ def _restart_backend():
         log("_restart_backend: xiaomusic restart triggered")
     except Exception as e:
         log("_restart_backend failed %r" % (e,))
-# ------------------------------------------------ 设备端登录：扫码 / 体检 / 设备
+# ------------------------------------------------ 登录：扫码 / 体检 / 设备
 MI_UA = ("MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; iOS 14.4.0) "
          "Alamofire/6.0.103 MICO/iOSApp/appStore/6.0.103")
 
@@ -8802,7 +9163,7 @@ def _auth_file_path():
 
 
 def mi_auth_check():
-    """只读校验 auth.json 里的设备端授权是否还有效"""
+    """只读校验 auth.json 里的授权是否还有效"""
     res = {"valid": False, "has_auth": os.path.isfile(_auth_file_path())}
     if not res["has_auth"]:
         res["msg"] = "尚未登录（无授权文件）"
@@ -8837,7 +9198,7 @@ def mi_auth_check():
 
 def xm_devices():
     """取 xiaomusic 当前认到的音箱（/device_list 是轻量接口，不会卡登录锁）"""
-    d = json.loads(_http_get(BACKEND_API + "/device_list", timeout=8))
+    d = json.loads(_http_get(XIAOMUSIC_API + "/device_list", timeout=8))
     return d.get("devices") or []
 
 
@@ -8851,7 +9212,7 @@ def xm_mi_did():
 
 
 def xm_setting():
-    return json.loads(_http_get(BACKEND_API + "/getsetting", timeout=10))
+    return json.loads(_http_get(XIAOMUSIC_API + "/getsetting", timeout=10))
 
 
 def xm_device_rows(devs):
@@ -8956,8 +9317,12 @@ class Handler(BaseHTTPRequestHandler):
         mid = ((qs.get("id") or [""])[0] or "").strip()
         if not mid:
             return self._json({"ok": False, "msg": "缺少 id"}, 400)
+        # v4.34：可选 song/artist —— 由 play_online 拼进流地址。带名字时，源直链失效可换源；
+        # 不带时退回老的「只按 id 解析」，行为不变。修「日缓存里死 id 的在线歌播不了」。
+        _q_song = ((qs.get("song") or [""])[0] or "").strip()
+        _q_art = ((qs.get("artist") or [""])[0] or "").strip()
         try:
-            url, src, note, _song, _art = jy_resolve(mid)
+            url, src, note, _song, _art = jy_resolve(mid, _q_song, _q_art)
         except Exception as e:
             return self._json({"ok": False, "msg": "取直链失败：%s" % e}, 502)
         if not url:
@@ -8968,7 +9333,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "fallback": "flac", "ext": ext,
                                "msg": "无损格式音箱放不了，已改为下载后播放"}, 415)
         hdrs = {"User-Agent": UA, "Accept": "*/*"}
-        _ref = ""   # 公开版：不再按源附带 Referer
+        _ref = _STREAM_REFERER.get(src) or ""
         if _ref:
             hdrs["Referer"] = _ref
         rng = self.headers.get("Range") or ""
@@ -9030,6 +9395,71 @@ class Handler(BaseHTTPRequestHandler):
                 r.close()
             except Exception:
                 pass
+
+    def _pl_file(self, head=False):
+        """GET/HEAD /api/plfile?sid=<mid> —— 播放 PLAYLIST_CACHE 里已预取的本地音频（先下后播）。
+
+        与 _jy_stream 的区别：源是本地文件、不是上游代理，所以**零缓冲**；
+        音箱拿到的是已经下好的 mp3，立刻出声，不再等上游那 1~3s。
+        Range 支持（拖动进度靠它）。路径锁死在 PLAYLIST_CACHE 内（防穿越）。
+        无损不缓存，所以这里只会是 mp3/m4a/aac。"""
+        u0 = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(u0.query)
+        sid = ((qs.get("sid") or [""])[0] or "").strip()
+        if not sid:
+            return self._json({"ok": False, "msg": "缺少 sid"}, 400)
+        p = _pl_audio_path(sid)
+        if not os.path.isfile(p):
+            return self._json({"ok": False, "msg": "该歌尚未预取到本地", "cached": False}, 404)
+        try:
+            size = os.path.getsize(p)
+        except Exception:
+            return self._json({"ok": False, "msg": "读文件失败"}, 500)
+        rng = (self.headers.get("Range") or "").strip()
+        m = re.match(r"bytes=(\d+)-(\d*)$", rng)
+        if m:
+            start = int(m.group(1))
+            end = int(m.group(2)) if m.group(2) else size - 1
+            end = min(end, size - 1)
+            if start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", "bytes */%d" % size)
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+            self.send_header("Content-Length", str(end - start + 1))
+        else:
+            self.send_response(200)
+            self.send_header("Content-Length", str(size))
+        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-store")
+        self._cors()
+        self.end_headers()
+        if head:
+            return
+        try:
+            with open(p, "rb") as f:
+                if m:
+                    f.seek(start)
+                    rem = end - start + 1
+                    while rem > 0:
+                        buf = f.read(min(64 * 1024, rem))
+                        if not buf:
+                            break
+                        self.wfile.write(buf)
+                        rem -= len(buf)
+                else:
+                    while True:
+                        buf = f.read(64 * 1024)
+                        if not buf:
+                            break
+                        self.wfile.write(buf)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            log("pl_file body: %r" % (e,))
 
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
@@ -9133,7 +9563,7 @@ class Handler(BaseHTTPRequestHandler):
                                    "src": got, "how": why})
 
             if u.path == "/api/authcheck":
-                # 体检：授权文件还在不在、设备端是否还认这张票
+                # 体检：授权文件还在不在、是否还认这张票
                 return self._json({"ok": True, **mi_auth_check()})
 
             if u.path == "/api/sync":
@@ -9188,7 +9618,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(info)
 
             if u.path.startswith("/stem/"):
-                # 分轨音频：带 Range，音箱和语音助手都能拖进度
+                # 分轨音频：带 Range，音箱和音箱都能拖进度
                 bits = [x for x in u.path.split("/") if x]
                 # ["stem", key, "vocal.mp3"]
                 if len(bits) != 3 or not bits[2].endswith(".mp3"):
@@ -9222,11 +9652,26 @@ class Handler(BaseHTTPRequestHandler):
                                        "devices": []})
 
             if u.path == "/api/qr_start":
-                # 取一张设备端登录二维码（复用 xiaomusic 的扫码登录通道）
+                # 取一张登录二维码（复用 xiaomusic 的扫码登录通道）
                 try:
-                    d = json.loads(_http_get(BACKEND_API + "/api/get_qrcode", timeout=25))
+                    d = json.loads(_http_get(XIAOMUSIC_API + "/api/get_qrcode", timeout=25))
                 except Exception as e:
                     return self._json({"ok": False, "msg": "取二维码失败：%r" % (e,)}, 500)
+                # v4.38：xiaomusic 的 /api/get_qrcode 只要 serviceLogin 回「刷新Token成功」
+                # 就判定「已登录，无需扫码」，返回空的 qrcode_url。可实际会遇到
+                # 「passToken 能换票、但 mina 不认这台设备（device_list 401）」的僵局 ——
+                # 这时前端只会显示「已登录」，用户永远拿不到码，音箱也永远回不来。
+                # 所以只要这张码是空的，就转身去要一张**强制码**。
+                if not (d.get("qrcode_url") or ""):
+                    try:
+                        _d2 = json.loads(_http_get(XIAOMUSIC_API + "/api/get_qrcode_force",
+                                                   timeout=25))
+                        if _d2.get("success") and (_d2.get("qrcode_url") or ""):
+                            log("qr_start: 普通出码为空（%s），改用强制码"
+                                % (d.get("message") or d.get("already_logged_in"),))
+                            d = _d2
+                    except Exception as e:
+                        log("qr_start force fail %r" % (e,))
                 return self._json({"ok": bool(d.get("success")),
                                    "image": d.get("qrcode_url") or "",
                                    "expires": d.get("expire_seconds") or 120,
@@ -9297,10 +9742,20 @@ class Handler(BaseHTTPRequestHandler):
                 likes = [x for x in (g("likes") or "").split("|") if x.strip()]
                 # limit 传 "abc" 之类不能直接 500：gi() 兜底成默认值
                 _lim = gi("limit", 12)
-                return self._json({"ok": True,
-                                   **recommend_sf(g("q"), _lim, tags=tags,
-                                                 seed=g("seed") or "", likes=likes,
-                                                 tagmode=tagmode or None)})
+                # ==jy_ocov_disk== 先算推荐，再后台预热在线封面（不阻塞返回）
+                _rec = recommend_sf(g("q"), _lim, tags=tags,
+                                    seed=g("seed") or "", likes=likes,
+                                    tagmode=tagmode or None)
+                try:
+                    # v4.35：只给能真取到封面的 id 预热 —— 纯数字（源A）与 `wy:`（源B，
+                    # 实测 200 真图）。`kw:` 的封面接口恒 404，塞进来等于白起线程抢上游锁。
+                    prefetch_online_covers(
+                        [s.get("id") for s in (_rec.get("online") or [])
+                         if s and (str(s.get("id") or "").isdigit()
+                                   or str(s.get("id") or "").lower().startswith("wy:"))])
+                except Exception:
+                    pass
+                return self._json({"ok": True, **_rec})
 
             # JY-MORE: 每日推荐「下拉加载更多」。
             #   不从零再算一次推荐（那要重新搜上游，3~10 秒），而是从 recommend() 存下来的
@@ -9345,7 +9800,7 @@ class Handler(BaseHTTPRequestHandler):
                 did = g("did") or _default_did()
                 try:
                     with urllib.request.urlopen(
-                            BACKEND_API + "/getvolume?did=" + urllib.parse.quote(did),
+                            XIAOMUSIC_API + "/getvolume?did=" + urllib.parse.quote(did),
                             timeout=8) as r:
                         out = json.loads(r.read().decode("utf-8", "ignore") or "{}")
                     return self._json({"ok": True, **out})
@@ -9504,6 +9959,10 @@ class Handler(BaseHTTPRequestHandler):
                 touch_user()
                 return self._jy_stream(head=False)
 
+            if u.path == "/api/plfile":
+                # JY-PLCACHE：播放已预取到本地的在线歌（零缓冲）。详见 Handler._pl_file。
+                return self._pl_file(head=False)
+
             if u.path == "/api/online_cover":
                 # 在线搜索结果的封面：歌曲还没下载，按 id 去源站详情页取（带内存缓存）
                 mid = (g("id") or "").strip()
@@ -9514,6 +9973,8 @@ class Handler(BaseHTTPRequestHandler):
                     data = online_cover_bytes(mid)
                 except Exception as e:
                     return self._json({"ok": False, "msg": str(e)}, 404)
+                if not data:      # ==jy_ocov_disk== 兜底：空数据当 404，别回 200 空图（前端走 onerror 兜底）
+                    return self._json({"ok": False, "msg": "no cover"}, 404)
                 self.send_response(200)
                 ctype = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else (
                     "image/gif" if data[:3] == b"GIF" else "image/jpeg")
@@ -9624,7 +10085,23 @@ class Handler(BaseHTTPRequestHandler):
                 mid = g("id")
                 if not mid:
                     return self._json({"ok": False, "msg": "缺少 id"}, 400)
-                return self._json({"ok": True, **fetch_song(mid)})
+                # JY-SRC: 只有源A（纯数字）的 id 能直接拼详情页 URL。
+                # wy:/kw: 的 id 空间跟源A毫无关系，拆掉前缀去查会命中**另一首
+                # 完全不相干的歌**（实测 wy:3026583 拆成 3026583 → 查出「河边对口唱」），
+                # 这比原来的 500 更危险：前端会拿错歌名/封面/歌词当对的用。
+                # 所以非源A源明确拒绝，且一律 200 + ok:false（前端按 ok 判，
+                # 500 会被当成服务挂了）。gqb 走原路径，行为一字不变。
+                try:
+                    _src, _key = jy_src_of(mid)
+                except Exception:
+                    _src, _key = "gqb", mid
+                if _src != "gqb" or not _key:
+                    return self._json({"ok": False, "msg": "该来源不支持详情查询"})
+                mid = str(_key)
+                try:
+                    return self._json({"ok": True, **fetch_song(mid)})
+                except Exception as e:
+                    return self._json({"ok": False, "msg": "取详情失败：%s" % str(e)[:60]})
 
             if u.path == "/api/meta":
                 name = g("name")
@@ -9679,6 +10156,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/jy_stream":
             # 有些播放器会先发 HEAD 探格式/长度，不接管的话会拿到 501 → 直接放弃播放
             return self._jy_stream(head=True)
+        if u.path == "/api/plfile":
+            return self._pl_file(head=True)
         if u.path.startswith("/lvideo/"):
             key = u.path[len("/lvideo/"):].split(".")[0]
             st = lyric_studio()
@@ -9864,6 +10343,33 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "local": True, "name": hit,
                                        "score": round(float(_best or 0.0), 3)})
                 if want_stream:
+                    # ---- JY-PLCACHE：这首歌已经预取到本地 → 直接喂本地文件，零缓冲 ----
+                    if _pl_audio_ready(mid):
+                        _base = jy_stream_base(self.headers.get("Host") or "")
+                        _pldur = 0
+                        try:
+                            with _pl_index_lock:
+                                _pi = _pl_index_get().get(mid) or {}
+                            _pldur = int(_pi.get("dur") or 0)
+                        except Exception:
+                            _pldur = 0
+                        if not _pldur:
+                            _pldur = jy_src_dur(mid) or 0
+                        _psong, _part = jy_src_lookup(mid)
+                        try:
+                            plcache_after_write("play")   # 顺手清一遍过期/超额的
+                        except Exception:
+                            pass
+                        return self._json({
+                            "ok": True, "local": False, "stream": True, "cached": True,
+                            "url": "%s/api/plfile?sid=%s" % (
+                                _base, urllib.parse.quote(mid, safe="")),
+                            "fmt": ".mp3", "src": "plcache",
+                            # 钉显示名 + 真实总长（与既有 stream 分支字段一致，前端零改动）
+                            "title": song or _psong or "",
+                            "artist": artist or _part or "",
+                            "dur": _pldur,
+                            "msg": "本地已预取，直接播放（零缓冲）"})
                     # ---- stream 分支：先看拿到的是不是无损；是就回落下载 ----
                     _u2, _src, _note = "", "", ""
                     try:
@@ -9873,17 +10379,28 @@ class Handler(BaseHTTPRequestHandler):
                     _ext = _url_ext(_u2)
                     if _u2 and _ext not in _LOSSLESS_EXT:
                         _base = jy_stream_base(self.headers.get("Host") or "")
+                        # v4.34：把歌名/歌手一起塞进流地址 —— _jy_stream 侧 jy_resolve 只有
+                        # 拿到名字，源直链失效时才会按「歌名+歌手」换源；不带名字的死 id
+                        # （如日缓存里某些源A死链）会在流那一步直接 404「所有源都取不到」。
+                        _q_song = urllib.parse.quote(song or _s2 or "", safe="")
+                        _q_art = urllib.parse.quote(artist or _a2 or "", safe="")
                         return self._json({
                             "ok": True, "local": False, "stream": True,
-                            "url": "%s/api/jy_stream?id=%s" % (
-                                _base, urllib.parse.quote(mid, safe="")),
+                            "url": "%s/api/jy_stream?id=%s&song=%s&artist=%s" % (
+                                _base, urllib.parse.quote(mid, safe=""), _q_song, _q_art),
                             "fmt": _ext or ".mp3", "src": _src or "",
                             # v4.01：前端要用这三个把「当前曲显示名」钉准 + 用真实总长当
                             # 进度轴（设备回报的 cur_music 可能直接是那条流地址，认不得）。
-                            # 拿不到就留空串/0，别编。
+                            # v4.30：dur 以前是硬编码 0，前端拿不到总长 → 进度条不动、
+                            # 歌词不滚、播完不切下一首。现在从缓存反查真实时长
+                            # （见 jy_src_dur：按 id 命中 → 源A详情页缓存 →
+                            # 按 歌名+歌手 严格相等借 wy/kw 那条记录）。
+                            # 三级都拿不到（缓存过期 / 服务刚重启 / 源本身没有）
+                            # 才是 0，前端对 0 有降级：不显示总长、进度条按
+                            # 已播时间渐近、切歌靠设备回报的播放结束事件。
                             "title": song or _s2 or "",
                             "artist": artist or _a2 or "",
-                            "dur": 0,
+                            "dur": jy_src_dur(mid) or 0,
                             "msg": "在线播放（不占本地空间）"})
                     # 无损 / 取不到直链 → 走下载（下载完 refresh 才有本地文件可播）
                     _fallback = "flac" if _ext in _LOSSLESS_EXT else "resolve"
@@ -10331,7 +10848,7 @@ def _now_playing_name():
     try:
         did = _default_did()
         with urllib.request.urlopen(
-                BACKEND_API + "/playingmusic?did=" + urllib.parse.quote(did), timeout=4) as r:
+                XIAOMUSIC_API + "/playingmusic?did=" + urllib.parse.quote(did), timeout=4) as r:
             pm = json.loads(r.read().decode("utf-8", "ignore") or "{}")
         return str(pm.get("cur_music") or "")
     except Exception:
@@ -10388,7 +10905,7 @@ def main():
     threading.Thread(target=_tvf_boot, daemon=True).start()        # 还原上次残留的电视静音
     threading.Thread(target=axis_worker, daemon=True).start()      # JY-AXIS 组播轴自动重锚
     threading.Thread(target=_wavcache_boot, daemon=True).start()   # JY-WAVCACHE 开机补扫一次
-    threading.Thread(target=_plcache_boot, daemon=True).start()    # JY-PLCACHE 开机补扫一次
+    threading.Thread(target=_plcache_boot, daemon=True).start()     # JY-PLCACHE 开机补扫一次
     srv.serve_forever()
 
 
