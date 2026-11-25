@@ -814,38 +814,124 @@
   /* 歌单 */
   .plwrap{flex:1 1 auto;overflow-y:auto;padding:4px 16px 28px;-webkit-overflow-scrolling:touch}
   .plwrap::-webkit-scrollbar{width:0}
-  .plgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:6px}
+  .plgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:10px}
+  /* v4.64 布局：封面从「86px 横条」改成**正方形大图**，首数压到图上、名字单独一行。
+     横条那种比例把方封面裁掉一半，看起来像张壁纸；方图才是歌单该有的样子。 */
   .plcard{
-    position:relative;border:1px solid var(--line);border-radius:17px;overflow:hidden;
-    background:rgba(var(--fg),.032);cursor:pointer;transition:transform .14s,border-color .18s;
+    position:relative;border-radius:18px;overflow:hidden;
+    background:rgba(var(--fg),.032);border:1px solid var(--line);
+    cursor:pointer;transition:transform .14s,border-color .18s;
   }
   .plcard:active{transform:scale(.98)}
-  .plcard .cov{height:86px;background:var(--grad);display:flex;align-items:center;justify-content:center;opacity:.92;position:relative;overflow:hidden}
+  .plcard .cov{
+    position:relative;aspect-ratio:1/1;overflow:hidden;
+    background:var(--grad);display:flex;align-items:center;justify-content:center;
+  }
   .plcard .cov svg{width:34px;height:34px;fill:none;stroke:#fff;stroke-width:1.7;opacity:.95}
-  /* v3.92：歌单配图（关键词找来的图）盖在音符底图上面；取不到就把 img 摘掉，露出音符 */
+  /* 封面来自 /api/plcover → 歌单里某首歌自己的封面；取不到就摘掉 img，露出音符 */
   .plcard .cov img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  /* 底部压一层渐变，白字（首数）才压得住 */
+  .plcard .cov::after{
+    content:"";position:absolute;left:0;right:0;bottom:0;height:42%;
+    background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.46));pointer-events:none;
+  }
+  .plcard .cnt{
+    position:absolute;left:10px;bottom:8px;z-index:2;font-size:10.5px;font-weight:600;
+    color:#fff;letter-spacing:.4px;text-shadow:0 1px 3px rgba(0,0,0,.55);
+  }
+  .plcard .badge{
+    position:absolute;left:8px;top:8px;z-index:2;font-size:9.5px;line-height:1;font-weight:600;
+    padding:4px 7px;border-radius:7px;letter-spacing:.4px;color:#fff;background:rgba(0,0,0,.42);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  }
   .plcard .meta{padding:9px 11px 11px}
   .plcard .pn{font-size:13px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .plcard .pc{font-size:10.5px;color:var(--sub);margin-top:3px}
   .plcard .del{
-    position:absolute;top:7px;right:7px;width:24px;height:24px;border:none;border-radius:8px;
-    background:rgba(0,0,0,.34);color:#fff;font-size:13px;line-height:1;cursor:pointer;
+    position:absolute;top:8px;right:8px;z-index:3;width:24px;height:24px;border:none;border-radius:9px;
+    background:rgba(0,0,0,.38);color:#fff;font-size:13px;line-height:1;cursor:pointer;
     display:flex;align-items:center;justify-content:center;
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
   }
   .plcard .del:active{background:rgba(255,80,80,.75)}
-  .pldetail-h{display:flex;align-items:center;gap:10px;padding:4px 0 12px}
+  /* 平板/宽屏：两列会变成两张巨大的方图，铺成 4~5 列才像歌单墙 */
+  @media(min-width:760px){
+    .plgrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+    .plhero .hc{width:96px;height:96px;border-radius:17px}
+    .plhero .hn{font-size:19px}
+  }
+  @media(min-width:1200px){ .plgrid{grid-template-columns:repeat(5,minmax(0,1fr))} }
+  .pldetail-h{display:flex;align-items:center;gap:10px;padding:2px 0 10px}
   .pldetail-h .bk{
     border:1px solid var(--line);background:rgba(var(--fg),.04);color:var(--sub);
     border-radius:10px;padding:7px 12px;font-size:12px;font-family:inherit;cursor:pointer;white-space:nowrap;
   }
-  .pldetail-h .ttl{flex:1;min-width:0;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pldetail-h .act{
-    border:none;border-radius:10px;padding:7px 12px;font-size:12px;font-family:inherit;cursor:pointer;
+  /* v4.64 歌单详情改成「封面 hero」：左边方图（点一下换封面），右边名字 + 首数/来源。
+     原来只有一行标题，看不出这是哪个歌单、也没有放图的余地。 */
+  .plhero{display:flex;align-items:center;gap:12px;padding:2px 0 12px}
+  .plhero .hc{
+    position:relative;width:74px;height:74px;flex:0 0 auto;border-radius:14px;overflow:hidden;
+    background:var(--grad);display:flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:0 10px 24px -14px rgba(0,0,0,.85);
+  }
+  .plhero .hc svg{width:26px;height:26px;fill:none;stroke:#fff;stroke-width:1.7;opacity:.95}
+  .plhero .hc img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  .plhero .hc .cam{
+    position:absolute;right:0;bottom:0;width:24px;height:24px;z-index:2;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.46);border-top-left-radius:11px;
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  }
+  .plhero .hc .cam svg{width:13px;height:13px;stroke:#fff;opacity:.95}
+  .plhero .hm{flex:1;min-width:0}
+  .plhero .hn{font-size:16px;font-weight:750;line-height:1.25;letter-spacing:.2px;
+    overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .plhero .hs{font-size:11.5px;color:var(--sub);margin-top:5px;letter-spacing:.2px}
+  .placts{display:flex;gap:8px;padding:0 0 12px;flex-wrap:wrap}
+  .placts .act{
+    border:none;border-radius:11px;padding:8px 13px;font-size:12px;font-family:inherit;cursor:pointer;
     background:var(--grad);color:#fff;font-weight:650;white-space:nowrap;
   }
+  .placts .act.ghost{
+    background:rgba(var(--fg),.055);border:1px solid var(--line);color:var(--txt);font-weight:600;
+  }
   /* v4.63：自动归类歌单（日语/英文/中文/纯音乐）的「自动归类」标签，不做成按钮 */
-  .pldetail-h .act.ro{
+  .placts .act.ro{
     background:rgba(var(--fg),.06);color:var(--sub);font-weight:600;cursor:default;letter-spacing:.3px;
+  }
+
+  /* ---------- 换封面面板（v4.64）---------- */
+  #plCovSheet .sheetbox{max-height:88vh;display:flex;flex-direction:column}
+  .pcv-bar{display:flex;gap:8px;padding:12px 2px 4px}
+  .pcv-b{
+    flex:1;border:1px solid var(--line);background:rgba(var(--fg),.05);color:var(--txt);
+    border-radius:11px;padding:9px 6px;font-size:12px;font-family:inherit;font-weight:600;cursor:pointer;
+  }
+  .pcv-b:active{transform:scale(.97);background:rgba(var(--fg),.09)}
+  .pcv-b.pri{background:var(--grad);border-color:transparent;color:#fff}
+  .pcv-note{font-size:11px;color:var(--dim);padding:8px 2px 6px;letter-spacing:.2px}
+  .pcv-grid{
+    flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:max-content;
+    align-content:start;gap:8px;padding:2px 2px 8px;
+  }
+  .pcv-grid::-webkit-scrollbar{width:0}
+  /* 格子必须是正方形：img 用绝对定位填满，别让图片的原始高度把格子撑成竖条
+     （第一次就栽在这 —— display:flex + height:100% 的 img 会按自身高度撑高父级）。 */
+  .pcv-cell{
+    position:relative;aspect-ratio:1/1;border-radius:12px;overflow:hidden;cursor:pointer;
+    background:rgba(var(--fg),.06);border:1px solid transparent;
+  }
+  .pcv-cell svg{
+    position:absolute;left:50%;top:50%;width:20px;height:20px;transform:translate(-50%,-50%);
+    fill:none;stroke:var(--dim);stroke-width:1.7;
+  }
+  .pcv-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  .pcv-cell:active{transform:scale(.96)}
+  .pcv-cell.on{border-color:#FF5F7A;box-shadow:0 0 0 1px #FF5F7A inset}
+  .pcv-cell.on::after{
+    content:"✓";position:absolute;right:5px;bottom:4px;font-size:11px;color:#fff;
+    background:#FF5F7A;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);
   }
   /* 推荐 */
   .recwrap{flex:1 1 auto;overflow-y:auto;padding:2px 16px 28px;-webkit-overflow-scrolling:touch}
@@ -2287,6 +2373,20 @@ body.pad .settwocol{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-it
       <button class="abtn cgo" id="cusGo">添加到桌面</button>
       <div class="sheetnote" id="cusNote">会先把图存进「我的图标」，再交给系统固定到桌面</div>
     </div>
+  </div>
+</div>
+
+<!-- v4.64：歌单封面选择器 —— 用歌单里某首歌的封面，或上传自己的图 -->
+<div class="sheet" id="plCovSheet">
+  <div class="sheetbox">
+    <div class="sheethead"><b>歌单封面</b><em id="pcvSub"></em><div class="x" id="pcvClose">✕</div></div>
+    <div class="pcv-bar">
+      <button class="pcv-b" id="pcvAuto" type="button">自动（第一首有图）</button>
+      <button class="pcv-b pri" id="pcvUp" type="button">上传图片</button>
+    </div>
+    <div class="pcv-note">点下面的封面就换成它；换完两端（手机 / 电脑）同时生效</div>
+    <div class="pcv-grid" id="pcvGrid"></div>
+    <input type="file" id="pcvFile" accept="image/*" style="display:none">
   </div>
 </div>
 
@@ -6660,6 +6760,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
 
   /* ---------------- 我的歌单 ---------------- */
   var plCur = null;      // 正在查看的歌单名（null=歌单列表）
+  var plCurRO = false;   // 正在看的歌单是不是自动归类的只读歌单
   var plCache = [];      // 歌单元数据
 
   function loadPlaylists(){
@@ -6690,23 +6791,33 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       var cov = document.createElement("div");
       cov.className = "cov";
       cov.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12M9 18a3 3 0 11-6 0 3 3 0 016 0zM19 16a3 3 0 11-6 0 3 3 0 016 0z"/></svg>';
-      /* v3.92：歌单本来没有图，只有一把音符图标。改成按歌单名找一张图盖上去
-         （/api/plcover，服务端按关键词找、裁成方形并缓存）。文案/接口都失败时
-         把 img 摘掉，露出来的还是原来那个音符，不会出现空白块。 */
+      /* v4.64：封面 = 歌单里某首歌自己的封面（服务端挑，见 /api/plcover）。
+         换过封面后 cover_ts 会变，带在 src 上破浏览器缓存；取不到就摘掉 img，
+         露出下面的音符底图，不会出现空白块。 */
       (function(){
         var ci = document.createElement("img");
         ci.alt = "";
         ci.loading = "lazy";
         ci.decoding = "async";
         ci.onerror = function(){ if(ci.parentNode) ci.parentNode.removeChild(ci); };
-        ci.src = MM + "/api/plcover?name=" + encodeURIComponent(p.name);
+        ci.src = MM + "/api/plcover?name=" + encodeURIComponent(p.name) +
+                 "&v=" + (p.cover_ts || 0);
         cov.appendChild(ci);
       })();
+      if(p.builtin){
+        var bd = document.createElement("span");
+        bd.className = "badge";
+        bd.textContent = "自动";
+        cov.appendChild(bd);
+      }
+      var cnt = document.createElement("span");
+      cnt.className = "cnt";
+      cnt.textContent = (p.count || 0) + " 首";
+      cov.appendChild(cnt);
       card.appendChild(cov);
       var meta = document.createElement("div");
       meta.className = "meta";
-      meta.innerHTML = '<div class="pn">' + esc(p.name) + '</div>' +
-                       '<div class="pc">' + p.count + ' 首</div>';
+      meta.innerHTML = '<div class="pn">' + esc(p.name) + '</div>';
       card.appendChild(meta);
       /* v4.63：日语/英文/中文/纯音乐 是 JY-LANG 自动算出来的只读歌单（builtin），
          没有「删除」也没有「移出」—— 删了下次刷新又回来，不如不给按钮。 */
@@ -6734,13 +6845,16 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     plCur = name;
     fetch(MM + "/api/playlist?name=" + encodeURIComponent(name))
       .then(function(r){ return r.json(); })
-      .then(function(d){ renderPlaylistSongs(name, (d && d.songs) || [], !!(d && d.builtin)); })
+      .then(function(d){
+        plCurRO = !!(d && d.builtin);
+        renderPlaylistSongs(name, (d && d.songs) || [], plCurRO, d);
+      })
       .catch(function(e){
         $("plWrap").innerHTML = emptyHtml("打开失败", (e && e.message) || "", "list");
       });
   }
 
-  function renderPlaylistSongs(name, songs, ro){
+  function renderPlaylistSongs(name, songs, ro, meta){
     var wrap = $("plWrap");
     wrap.innerHTML = "";
     var h = document.createElement("div");
@@ -6750,24 +6864,61 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     bk.textContent = "‹ 歌单";
     bk.onclick = function(){ loadPlaylists(); };
     h.appendChild(bk);
-    var ttl = document.createElement("div");
-    ttl.className = "ttl";
-    ttl.textContent = name;
-    h.appendChild(ttl);
+    wrap.appendChild(h);
+
+    /* v4.64：封面 hero —— 左边方图（点一下就换封面），右边名字 + 首数/来源。
+       原来这里只有一行标题，看不出是哪个歌单、也没地方放图。 */
+    var hero = document.createElement("div");
+    hero.className = "plhero";
+    var hc = document.createElement("div");
+    hc.className = "hc";
+    hc.title = "换封面";
+    var hsvg = document.createElement("div");
+    hsvg.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12M9 18a3 3 0 11-6 0 3 3 0 016 0zM19 16a3 3 0 11-6 0 3 3 0 016 0z"/></svg>';
+    hc.appendChild(hsvg.firstChild);
+    var hi = document.createElement("img");
+    hi.alt = "";
+    hi.decoding = "async";
+    hi.onerror = function(){ if(hi.parentNode) hi.parentNode.removeChild(hi); };
+    hi.src = MM + "/api/plcover?name=" + encodeURIComponent(name) +
+             "&v=" + ((meta && meta.cover_ts) || 0);
+    hc.insertBefore(hi, hc.firstChild);
+    var cam = document.createElement("i");
+    cam.className = "cam";
+    cam.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 8h3l1.6-2h6.8L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg>';
+    hc.appendChild(cam);
+    hc.onclick = function(){ openPlCover(name, songs, meta); };
+    hero.appendChild(hc);
+    var hm = document.createElement("div");
+    hm.className = "hm";
+    var why = ro ? "自动归类" : "自建歌单";
+    if(meta && meta.cover_src === "custom") why += " · 自定义封面";
+    hm.innerHTML = '<div class="hn">' + esc(name) + '</div>' +
+                   '<div class="hs">' + songs.length + ' 首 · ' + esc(why) + '</div>';
+    hero.appendChild(hm);
+    wrap.appendChild(hero);
+
+    var acts = document.createElement("div");
+    acts.className = "placts";
+    var cbtn = document.createElement("button");
+    cbtn.className = "act ghost";
+    cbtn.textContent = "换封面";
+    cbtn.onclick = function(){ openPlCover(name, songs, meta); };
+    acts.appendChild(cbtn);
     if(!ro){
       var add = document.createElement("button");
       add.className = "act";
       add.textContent = "＋ 添加歌曲";
       add.onclick = function(){ switchPane("list"); $("q").focus(); toast("搜索歌曲，点结果即可加入「" + name + "」"); };
-      h.appendChild(add);
+      acts.appendChild(add);
     }else{
       var tag = document.createElement("span");
       tag.className = "act ro";
       tag.textContent = "自动归类";
       tag.title = "这个歌单按歌词/艺人自动归类，新歌下载后自动进来，不能手工增删";
-      h.appendChild(tag);
+      acts.appendChild(tag);
     }
-    wrap.appendChild(h);
+    wrap.appendChild(acts);
 
     if(!songs.length){
       var ed = document.createElement("div");
@@ -6807,6 +6958,92 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       row.onclick = function(){ playSong(n); };
       wrap.appendChild(row);
     });
+  }
+
+  /* ---------------- 歌单封面（v4.64） ----------------
+     封面来源三条路，服务端按优先级挑：上传的图 > 你挑的那首 > 第一首真有图的歌。
+     这里只负责"让用户挑"和"挑完立刻换图"。 */
+  var PCV = { name: "", songs: [], meta: null };
+
+  function closePlCover(){
+    var el = $("plCovSheet");
+    if(el) el.classList.remove("on");
+  }
+
+  function openPlCover(name, songs, meta){
+    PCV = { name: name, songs: songs || [], meta: meta || null };
+    var g = $("pcvGrid");
+    if(!g) return;
+    if($("pcvSub")) $("pcvSub").textContent = PCV.songs.length + " 首";
+    var cur = (meta && meta.cover_src === "song") ? (meta.cover || "") : "";
+    g.innerHTML = "";
+    PCV.songs.forEach(function(n){
+      var c = document.createElement("div");
+      c.className = "pcv-cell" + (n === cur ? " on" : "");
+      c.title = n;
+      c.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12M9 18a3 3 0 11-6 0 3 3 0 016 0zM19 16a3 3 0 11-6 0 3 3 0 016 0z"/></svg>';
+      var im = document.createElement("img");
+      im.alt = "";
+      im.loading = "lazy";          // 歌单可能 150+ 首，不 lazy 会把封面一口气全拉一遍
+      im.decoding = "async";
+      im.onerror = function(){ if(im.parentNode) im.parentNode.removeChild(im); };
+      im.src = MM + "/api/cover?name=" + encodeURIComponent(n);
+      c.appendChild(im);
+      c.onclick = function(){ setPlCover({ song: n }); };
+      g.appendChild(c);
+    });
+    if(!PCV.songs.length){
+      g.innerHTML = emptyHtml("歌单还是空的", "先加几首歌，再来挑封面", "list");
+    }
+    if($("pcvClose")) $("pcvClose").onclick = closePlCover;
+    if($("plCovSheet")) $("plCovSheet").onclick = function(e){ if(e.target === this) closePlCover(); };
+    if($("pcvAuto")) $("pcvAuto").onclick = function(){ setPlCover({ clear: 1 }); };
+    if($("pcvUp")) $("pcvUp").onclick = function(){
+      var f = $("pcvFile");
+      if(!f) return;
+      f.value = "";
+      f.click();
+    };
+    if($("pcvFile")) $("pcvFile").onchange = function(){
+      var file = this.files && this.files[0];
+      if(!file) return;
+      if(!/^image\//.test(file.type)){ toast("请选一张图片"); return; }
+      if(file.size > 12 * 1024 * 1024){ toast("图片太大（>12MB）"); return; }
+      var fr = new FileReader();
+      fr.onload = function(){
+        var img = new Image();
+        img.onload = function(){
+          var S = 600, cv = document.createElement("canvas");
+          cv.width = cv.height = S;
+          var ctx = cv.getContext("2d");
+          var side = Math.min(img.width, img.height) || S;
+          ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
+          var data;
+          try{ data = cv.toDataURL("image/jpeg", 0.9); }catch(e){ data = fr.result; }
+          setPlCover({ img: data });
+        };
+        img.onerror = function(){ toast("这张图片读不出来"); };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    };
+    $("plCovSheet").classList.add("on");
+  }
+
+  function setPlCover(body){
+    var pl = PCV.name;
+    if(!pl) return;
+    var payload = { name: pl };
+    for(var k in body){ if(body.hasOwnProperty(k)) payload[k] = body[k]; }
+    post(MM + "/api/playlist_cover", payload).then(function(d){
+      if(!d || !d.ok){ toast((d && d.msg) || "设置封面失败"); return; }
+      toast(payload.clear ? "已恢复自动封面" : "封面已更新");
+      var meta = { cover: d.cover || "", cover_src: d.cover_src || "",
+                   cover_ts: d.cover_ts || 0 };
+      PCV.meta = meta;
+      closePlCover();
+      renderPlaylistSongs(pl, PCV.songs, plCurRO, meta);
+    }).catch(function(e){ toast("设置封面失败：" + e.message); });
   }
 
   /* ---------------- 每日推荐 ---------------- */

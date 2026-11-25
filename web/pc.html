@@ -973,6 +973,31 @@ body.maxed .winbtns .icoRestore{display:block}
 .mbox input{width:100%;margin:14px 0;border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:13px;outline:0;font-family:inherit}
 .mbox input:focus{border-color:rgba(49,194,124,.5)}
 .mrow{display:flex;gap:10px;justify-content:flex-end}
+/* v4.64 歌单封面选择器：网格是方的，img 绝对定位填满（别让图片原始高度把格子撑成竖条） */
+#plCovModal .mbox{width:660px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column}
+.covsub{font-style:normal;font-size:12.5px;color:var(--dim);margin-left:9px}
+.covbar{display:flex;gap:8px;align-items:center;margin:14px 0 10px;flex-wrap:wrap}
+.covhint{font-size:11.5px;color:var(--dim);margin-left:auto}
+.covgrid{
+  flex:1 1 auto;min-height:140px;overflow-y:auto;align-content:start;
+  display:grid;grid-template-columns:repeat(6,1fr);gap:8px;padding:2px 2px 4px;
+}
+.covgrid::-webkit-scrollbar{width:8px}
+.covgrid::-webkit-scrollbar-thumb{background:rgba(16,24,40,.16);border-radius:4px}
+.covcell{
+  position:relative;aspect-ratio:1/1;border-radius:9px;overflow:hidden;cursor:pointer;
+  background:#F1F3F6;border:1px solid var(--line);
+}
+.covcell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.covcell .ph{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:#9AA3B0}
+.covcell:hover{outline:2px solid rgba(49,194,124,.5);outline-offset:1px}
+.covcell.on{outline:2px solid var(--q);outline-offset:1px}
+.covcell.on::after{
+  content:"✓";position:absolute;right:4px;bottom:3px;width:16px;height:16px;border-radius:50%;
+  background:var(--q);color:#fff;font-size:10.5px;display:grid;place-items:center;
+  box-shadow:0 1px 4px rgba(0,0,0,.3);
+}
+.covempty{grid-column:1/-1;padding:26px 0;text-align:center;color:var(--dim);font-size:12.5px}
 .mbtn{padding:7px 18px;border-radius:9px;font-size:12.5px}
 .mbtn.pri{background:var(--q);color:#fff;font-weight:650}
 .mbtn.pri:hover{background:var(--q2)}
@@ -1357,7 +1382,7 @@ body.maxed .winbtns .icoRestore{display:block}
     </div>
 
     <div class="view" id="viewPl">
-      <div class="vhead"><b id="plTitle">歌单</b><em id="plCount"></em><span class="sp"></span><button class="minibtn" id="plDel">删除歌单</button></div>
+      <div class="vhead"><b id="plTitle">歌单</b><em id="plCount"></em><span class="sp"></span><button class="minibtn" id="plCovBtn">换封面</button><button class="minibtn" id="plDel">删除歌单</button></div>
       <div class="tabs"><div class="tab on">歌曲</div></div>
       <div class="acts">
         <button class="bigbtn pri" id="btnPlPlay"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>播放全部</button>
@@ -1914,6 +1939,20 @@ body.maxed .winbtns .icoRestore{display:block}
       <button class="mbtn gh" id="rnCancel">取消</button>
       <button class="mbtn pri" id="rnOk">保存</button>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="plCovModal">
+  <div class="mbox covbox">
+    <b>歌单封面</b><em class="covsub" id="plCovSub"></em>
+    <div class="covbar">
+      <button class="mbtn gh" id="plCovAuto">自动（第一首有图）</button>
+      <button class="mbtn gh" id="plCovUp">上传图片</button>
+      <span class="covhint">点下面任意一张，就用那首歌的封面</span>
+    </div>
+    <div class="covgrid" id="plCovGrid"></div>
+    <div class="mrow"><button class="mbtn gh" id="plCovClose">关闭</button></div>
+    <input type="file" id="plCovFile" accept="image/*" style="display:none">
   </div>
 </div>
 
@@ -5833,22 +5872,21 @@ function renderPlList(){
     el.className = "plrow";
     el.title = p.name + "（" + (p.count || 0) + " 首）· " +
                (p.builtin ? "自动归类（只读）" : "右键更多");
-    el.innerHTML = '<div class="pcv">' + (p.cover ? '<img src="' + MM + "/api/cover?name=" +
-      encodeURIComponent(p.cover) + '" alt="">' : '♪') + '</div><div class="pnm">' + esc(p.name) + '</div>' +
+    el.innerHTML = '<div class="pcv">♪</div><div class="pnm">' + esc(p.name) + '</div>' +
       (plStarOn(p.name) ? '<span class="pst">★</span>' : '');
-    /* v3.92：没封面（空歌单 / 歌都没图）就按歌单名找一张图；取不到再退回 ♪。
-       和 App 端同一个接口，图已经在服务端缓存过，这里只是换个 src。 */
-    if(!p.cover){
+    /* v4.64：缩略图 = 歌单里某首歌自己的封面（服务端挑，可以是用户指定的那首或上传的图）。
+       换过封面后 cover_ts 变，带在 src 上破缓存；取不到就留 ♪。
+       —— 以前这里是"第一首歌的封面，没有才按歌单名搜图"，第一首没图时卡片是空的。 */
+    (function(){
       var pv = el.querySelector(".pcv");
-      if(pv){
-        var pi = document.createElement("img");
-        pi.alt = "";
-        pi.onerror = function(){ pv.textContent = "♪"; };
-        pi.src = MM + "/api/plcover?name=" + encodeURIComponent(p.name);
-        pv.textContent = "";
-        pv.appendChild(pi);
-      }
-    }
+      if(!pv) return;
+      var pi = document.createElement("img");
+      pi.alt = "";
+      pi.onerror = function(){ if(pi.parentNode) pi.parentNode.removeChild(pi); };
+      pi.src = MM + "/api/plcover?name=" + encodeURIComponent(p.name) + "&v=" + (p.cover_ts || 0);
+      pv.textContent = "";
+      pv.appendChild(pi);
+    })();
     el.onclick = function(){ openPlaylist(p.name); };
     el.oncontextmenu = function(ev){ ev.preventDefault(); ev.stopPropagation(); showPlMenu(ev, p.name); };
     box.appendChild(el);
@@ -5875,6 +5913,8 @@ function showPlMenu(ev, name){
         toast(on ? ("已收藏「" + name + "」") : "已取消收藏");
       } }
   ];
+  items.push({ sep:true },
+             { t:"设置封面…", fn:function(){ openPlCover(name); } });
   if(!isBuiltinPl(name)){
     items.push({ t:"重命名…", fn:function(){ openRename(name); } },
                { sep:true },
@@ -5909,6 +5949,103 @@ function plAddQueue(name){
     toast("已把 " + list.length + " 首加入本机队列");
   }).catch(function(e){ toast("读取歌单失败：" + e.message); });
 }
+/* ---------------- 歌单封面（v4.64） ----------------
+   服务端按优先级挑图：上传的图 > 你挑的那首歌 > 第一首真有图的歌 > 按名字搜图。
+   这里只负责让用户挑。 */
+var PLCV = { name: "", songs: [], meta: null };
+
+function closePlCover(){ var m = $("plCovModal"); if(m) m.classList.remove("on"); }
+
+function openPlCover(name){
+  if(!$("plCovModal")) return;
+  PLCV = { name: name, songs: [], meta: null };
+  $("plCovSub").textContent = name;
+  $("plCovGrid").innerHTML = '<div class="covempty">读取歌单…</div>';
+  $("plCovModal").classList.add("on");
+  api(MM + "/api/playlist?name=" + encodeURIComponent(name)).then(function(d){
+    var songs = (d && d.songs) || [];
+    PLCV.songs = songs.map(function(x){ return typeof x === "string" ? x : (x.name || x.title || ""); })
+      .filter(function(n){ return n; });
+    PLCV.meta = d || null;
+    renderPlCovGrid();
+  }).catch(function(e){
+    $("plCovGrid").innerHTML = '<div class="covempty">读取失败：' + esc(e.message) + '</div>';
+  });
+}
+
+function renderPlCovGrid(){
+  var g = $("plCovGrid");
+  if(!g) return;
+  var cur = (PLCV.meta && PLCV.meta.cover_src === "song") ? (PLCV.meta.cover || "") : "";
+  g.innerHTML = "";
+  if(!PLCV.songs.length){
+    g.innerHTML = '<div class="covempty">这个歌单还是空的，先加几首歌</div>';
+    return;
+  }
+  PLCV.songs.forEach(function(n){
+    var c = document.createElement("div");
+    c.className = "covcell" + (n === cur ? " on" : "");
+    c.title = n;
+    c.innerHTML = '<span class="ph">♪</span>';
+    var im = document.createElement("img");
+    im.alt = "";
+    im.loading = "lazy";              // 150 首的歌单别一口气拉 150 张图
+    im.onerror = function(){ if(im.parentNode) im.parentNode.removeChild(im); };
+    im.src = MM + "/api/cover?name=" + encodeURIComponent(n);
+    c.appendChild(im);
+    c.onclick = function(){ pcSetPlCover({ song: n }); };
+    g.appendChild(c);
+  });
+}
+
+function pcSetPlCover(body){
+  var pl = PLCV.name;
+  if(!pl) return;
+  var payload = { name: pl };
+  for(var k in body){ if(body.hasOwnProperty(k)) payload[k] = body[k]; }
+  post(MM + "/api/playlist_cover", payload).then(function(d){
+    if(!d || !d.ok){ toast((d && d.msg) || "设置封面失败"); return; }
+    toast(payload.clear ? "已恢复自动封面" : "封面已更新");
+    PLCV.meta = { cover: d.cover || "", cover_src: d.cover_src || "", cover_ts: d.cover_ts || 0 };
+    renderPlCovGrid();
+    loadPlaylists();                  // 侧栏缩略图跟着换
+  }).catch(function(e){ toast("设置封面失败：" + e.message); });
+}
+
+if($("plCovClose")) $("plCovClose").onclick = closePlCover;
+if($("plCovModal")) $("plCovModal").onclick = function(e){ if(e.target === this) closePlCover(); };
+if($("plCovAuto")) $("plCovAuto").onclick = function(){ pcSetPlCover({ clear: 1 }); };
+if($("plCovUp")) $("plCovUp").onclick = function(){
+  var f = $("plCovFile");
+  if(!f) return;
+  f.value = "";
+  f.click();
+};
+if($("plCovFile")) $("plCovFile").onchange = function(){
+  var file = this.files && this.files[0];
+  if(!file) return;
+  if(!/^image\//.test(file.type)){ toast("请选一张图片"); return; }
+  if(file.size > 12 * 1024 * 1024){ toast("图片太大（>12MB）"); return; }
+  var fr = new FileReader();
+  fr.onload = function(){
+    var img = new Image();
+    img.onload = function(){
+      var S = 600, cv = document.createElement("canvas");
+      cv.width = cv.height = S;
+      var ctx = cv.getContext("2d");
+      var side = Math.min(img.width, img.height) || S;
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, S, S);
+      var data;
+      try{ data = cv.toDataURL("image/jpeg", 0.9); }catch(e){ data = fr.result; }
+      pcSetPlCover({ img: data });
+    };
+    img.onerror = function(){ toast("这张图片读不出来"); };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+};
+if($("plCovBtn")) $("plCovBtn").onclick = function(){ openPlCover(curPlName || $("plTitle").textContent); };
+
 var RENAME_OLD = "";
 function openRename(name){
   RENAME_OLD = name;

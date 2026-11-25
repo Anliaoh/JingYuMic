@@ -3080,8 +3080,9 @@ def builtin_playlists():
         v = d.get(nm)
         if not isinstance(v, list) or not v or nm in own:
             continue
-        out.append({"name": nm, "count": len(v), "cover": v[0],
-                    "created": 0, "builtin": True})
+        row = {"name": nm, "count": len(v), "created": 0, "builtin": True}
+        row.update(plcover_row(nm, len(v), v))
+        out.append(row)
     return out
 
 
@@ -3107,6 +3108,195 @@ def playlist_songs(name):
         if fn.lower().endswith((".mp3", ".flac", ".m4a", ".wav", ".ape", ".ogg", ".aac")):
             out.append(fn)
     return sorted(out)
+
+
+# ---------------------------------------------------------------- 歌单封面（==jy_plcover==）
+# v4.64：歌单封面不再"按歌单名去必应搜图"，改成**用歌单里某首歌自己的封面**。
+# 规则优先级（playlist_cover_pick）：
+#   ① 用户上传的图（/root/xiaomusic_conf/plcover/<md5>.jpg）  → src="custom"
+#   ② 用户挑的某首歌（_jy["plcover"][歌单]={"song": ...}）    → src="song"
+#   ③ 歌单里第一首**真有封面**的歌（不是第一首，第一首可能没图）→ src="song"
+#   ④ 一条都没有 → 空，交给 /api/plcover 走老的"按名字搜图"兜底 → src="auto"
+# 为什么要挑"真有封面"的：曲库 579 首里不少没有封面缓存，直接拿第一首会得到一张
+# 404 的 <img>，卡片就剩个音符底图 —— 比按名字搜图还难看。
+PLCUSTOM_DIR = os.path.join(CONF_DIR, "plcover")
+_PLCOV_SCAN = 40                     # 最多往后翻 40 首找封面，别为一张图扫 150 次磁盘
+_plcov_pick_cache = {}               # (歌单, 首数) -> (song, src, ts)
+_plcov_pick_lock = threading.Lock()
+
+
+def plcustom_path(name):
+    """用户上传的歌单封面落盘位置。放在 conf 下而不是 cache —— 清缓存不该把图清掉。"""
+    hid = hashlib.md5(("plc:" + str(name)).encode("utf-8")).hexdigest()[:16]
+    return os.path.join(PLCUSTOM_DIR, hid + ".jpg")
+
+
+def plcover_meta(name):
+    with _data_lock:
+        return dict((_jy.get("plcover") or {}).get(name) or {})
+
+
+def plcover_meta_set(name, meta):
+    """meta 为空 → 删除（回到自动）。"""
+    with _data_lock:
+        d = _jy.get("plcover")
+        if not isinstance(d, dict):
+            d = {}
+            _jy["plcover"] = d
+        if meta:
+            d[name] = meta
+        else:
+            d.pop(name, None)
+        save_data()
+    plcover_forget()
+
+
+def plcover_forget():
+    with _plcov_pick_lock:
+        _plcov_pick_cache.clear()
+
+
+def plcover_ts(name):
+    """给前端做 <img src="?v=ts"> 的缓存戳：改封面后立即换图，不用等浏览器缓存过期。"""
+    t = int((plcover_meta(name) or {}).get("ts") or 0)
+    try:
+        t = max(t, int(os.path.getmtime(plcustom_path(name))))
+    except Exception:
+        pass
+    return t
+
+
+def song_has_cover(name):
+    """这首歌**现在**有没有能直接下发的封面（只看本地缓存/索引，不联网）。"""
+    try:
+        for p in cover_cache_paths(name):
+            if os.path.exists(p) and os.path.getsize(p) > 0:
+                return True
+    except Exception:
+        pass
+    try:
+        return bool(_cover_best(name, "normal") or _cover_best(name, "hi"))
+    except Exception:
+        return False
+
+
+def playlist_cover_songs(name):
+    """写封面时要校验"这首歌在不在这个歌单里"，两类歌单的取法不一样。"""
+    if is_builtin_playlist(name):
+        v = xm_musiclist().get(name)
+        return list(v) if isinstance(v, list) else []
+    return playlist_songs(name)
+
+
+def playlist_cover_pick(name, songs=None):
+    """返回 (song, src)。8 秒内同一个歌单同首数直接给缓存，别每次列表都扫一遍磁盘。"""
+    if songs is None:
+        songs = playlist_cover_songs(name)
+    key = (name, len(songs))
+    now = time.time()
+    with _plcov_pick_lock:
+        hit = _plcov_pick_cache.get(key)
+        if hit and now - hit[2] < 8:
+            return hit[0], hit[1]
+    song, src = "", "auto"
+    if os.path.isfile(plcustom_path(name)):
+        src = "custom"
+    else:
+        want = str((plcover_meta(name) or {}).get("song") or "")
+        if want and (not songs or want in songs):
+            song, src = want, "song"
+        else:
+            for n in songs[:_PLCOV_SCAN]:
+                if song_has_cover(n):
+                    song, src = n, "song"
+                    break
+    with _plcov_pick_lock:
+        if len(_plcov_pick_cache) > 200:
+            _plcov_pick_cache.clear()
+        _plcov_pick_cache[key] = (song, src, now)
+    return song, src
+
+
+def plcover_row(name, count=None, songs=None):
+    """/api/playlists 与内置歌单共用的一行封面字段。"""
+    if songs is None:
+        songs = playlist_cover_songs(name)
+    song, src = playlist_cover_pick(name, songs)
+    return {"cover": song, "cover_src": src, "cover_ts": plcover_ts(name),
+            "cover_set": bool(((plcover_meta(name) or {}).get("song")) or src == "custom")}
+
+
+def plcustom_save(data_url):
+    """收 data:image/...;base64 的图，居中裁正方形缩到 600x600 JPEG。
+    歌单封面在手机上显示约 160px、PC 侧栏 30px、详情页最大 640px —— 600 够用又省流量。"""
+    m = re.match(r"^data:image/[a-zA-Z0-9.+-]+;base64,(.+)$", str(data_url or ""), re.S)
+    if not m:
+        return None, "不是有效的图片"
+    try:
+        raw = base64.b64decode(m.group(1))
+    except Exception:
+        return None, "图片解码失败"
+    if len(raw) < 64:
+        return None, "图片是空的"
+    if len(raw) > 12 * 1024 * 1024:
+        return None, "图片超过 12MB"
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        side = min(im.size)
+        l = (im.size[0] - side) // 2
+        t = (im.size[1] - side) // 2
+        im = im.crop((l, t, l + side, t + side)).resize((600, 600), Image.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=90, optimize=True)
+        raw = out.getvalue()
+    except Exception as e:
+        log("plcustom resize skip: %r" % (e,))
+        return None, "这张图解析不了（%s）" % (e,)
+    try:
+        os.makedirs(PLCUSTOM_DIR, exist_ok=True)
+        return raw, ""
+    except Exception as e:
+        return None, "存不下：%r" % (e,)
+
+
+def is_playlist_name(name):
+    """这个名字是不是一个歌单（内置只读 / 自建 / 目录）。用来决定 /api/plcover 走哪条路：
+    歌单 → 「里面某首歌的封面」；其它（推荐卡的主题名等）→ 老的按名字搜图。"""
+    if not name:
+        return False
+    if name in LANG_PLAYLISTS:
+        return True
+    if is_custom_playlist(name):
+        return True
+    try:
+        return os.path.isdir(playlist_dir(name))
+    except Exception:
+        return False
+
+
+def plcover_serve_bytes(name):
+    """/api/plcover 对歌单真正下发的内容：自定义图 → 挑出来的歌的封面 → 按名字搜图兜底。"""
+    p = plcustom_path(name)
+    if os.path.isfile(p):
+        try:
+            with open(p, "rb") as f:
+                d = f.read()
+            if len(d) > 512:
+                return d
+        except Exception:
+            pass
+    song, _src = playlist_cover_pick(name)
+    if song:
+        d = b""
+        try:
+            d = serve_cover(song) or b""
+        except Exception as e:
+            log("plcover serve_cover(%r) fail: %r" % (song, e))
+        if d:
+            return d
+    return plcover_bytes(name)
 
 
 def find_song_file(name):
@@ -9746,9 +9936,10 @@ class Handler(BaseHTTPRequestHandler):
                     metas = {p.get("name"): p for p in _jy["playlists"]}
                 for name, meta in metas.items():
                     songs = playlist_songs(name)
-                    rows.append({"name": name, "count": len(songs),
-                                 "cover": songs[0] if songs else "",
-                                 "created": meta.get("created", 0)})
+                    row = {"name": name, "count": len(songs),
+                           "created": meta.get("created", 0)}
+                    row.update(plcover_row(name, len(songs), songs))
+                    rows.append(row)
                 rows.sort(key=lambda r: r.get("created", 0))
                 # 自动归类的四个歌单排最前面（只读，见 LANG_PLAYLISTS 那段注释）
                 return self._json({"ok": True, "playlists": builtin_playlists() + rows})
@@ -9778,10 +9969,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "msg": "缺少 name"}, 400)
                 if is_builtin_playlist(name):
                     # 只读歌单：直接转发 /musiclist（名字跟曲库一致，前端能直接点播）
-                    return self._json({"ok": True, "name": name,
-                                       "songs": list(xm_musiclist().get(name) or []),
-                                       "builtin": True})
-                return self._json({"ok": True, "name": name, "songs": playlist_songs(name)})
+                    songs = list(xm_musiclist().get(name) or [])
+                    d = {"ok": True, "name": name, "songs": songs, "builtin": True}
+                    d.update(plcover_row(name, len(songs), songs))
+                    return self._json(d)
+                songs = playlist_songs(name)
+                d = {"ok": True, "name": name, "songs": songs}
+                d.update(plcover_row(name, len(songs), songs))
+                return self._json(d)
 
             if u.path == "/api/recommend":
                 touch_user()
@@ -10050,13 +10245,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.wfile.write(data)
 
             if u.path == "/api/plcover":
-                # 歌单配图：没有封面的歌单按名字/关键词找一张（见 plcover_bytes）。
+                # 歌单配图：v4.64 起优先用**歌单里某首歌自己的封面**
+                # （自定义上传 > 用户挑的那首 > 第一首真有图的），都没有才按名字搜图。
                 # 回的是图片字节而不是 JSON —— <img src> 直接用。
                 key = (g("k") or g("name") or "").strip()
                 if not key:
                     return self._json({"ok": False, "msg": "缺少 name / k"}, 400)
                 try:
-                    data = plcover_bytes(key)
+                    data = plcover_serve_bytes(key) if is_playlist_name(key) else plcover_bytes(key)
                 except Exception as e:
                     return self._json({"ok": False, "msg": str(e)}, 404)
                 self.send_response(200)
@@ -10064,8 +10260,9 @@ class Handler(BaseHTTPRequestHandler):
                     "image/gif" if data[:3] == b"GIF" else "image/jpeg")
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(data)))
-                # 一张图只抓一次，之后浏览器一个月内都不用再问
-                self.send_header("Cache-Control", "public, max-age=2592000")
+                # 图可能被用户随时换掉：前端带 ?v=<cover_ts> 破缓存，
+                # 没带的就只缓 1 小时（比原来的 30 天短得多，换封面不至于半天看不见）
+                self.send_header("Cache-Control", "public, max-age=3600")
                 self._cors()
                 self.end_headers()
                 return self.wfile.write(data)
@@ -10659,6 +10856,12 @@ class Handler(BaseHTTPRequestHandler):
                 with _data_lock:
                     _jy["playlists"] = [p for p in _jy["playlists"] if p.get("name") != name]
                     save_data()
+                # 歌单没了，封面配置和自定义图也别留着（同名新建会突然用上旧图）
+                plcover_meta_set(name, {})
+                try:
+                    os.remove(plcustom_path(name))
+                except Exception:
+                    pass
                 refresh_backend()
                 return self._json({"ok": True})
 
@@ -10684,8 +10887,58 @@ class Handler(BaseHTTPRequestHandler):
                         if p.get("name") == name:
                             p["name"] = new
                     save_data()
+                # 封面是跟着歌单名存的，改名要一起搬，否则换封面白换
+                if (plcover_meta(name) or {}).get("song") or (plcover_meta(name) or {}).get("custom"):
+                    plcover_meta_set(new, plcover_meta(name))
+                    plcover_meta_set(name, {})
+                old_cov = plcustom_path(name)
+                if os.path.isfile(old_cov):
+                    try:
+                        os.replace(old_cov, plcustom_path(new))
+                    except Exception:
+                        pass
                 refresh_backend()
                 return self._json({"ok": True, "name": new})
+
+            if u.path == "/api/playlist_cover":
+                # 设置歌单封面（==jy_plcover==）：
+                #   {"name":"X","song":"歌名"}          挑歌单里某首歌的封面
+                #   {"name":"X","clear":1}              恢复自动（挑第一首真有图的）
+                #   {"name":"X","img":"data:image/..."}  上传自己的图（600x600 居中裁切）
+                name = str(payload.get("name") or "").strip()
+                if not name:
+                    return self._json({"ok": False, "msg": "缺少 name"}, 400)
+                songs = playlist_cover_songs(name)
+                if not songs and not is_custom_playlist(name):
+                    return self._json({"ok": False, "msg": "歌单不存在"}, 404)
+                if payload.get("clear"):
+                    meta = {}
+                    try:
+                        os.remove(plcustom_path(name))
+                    except Exception:
+                        pass
+                elif payload.get("img"):
+                    raw, err = plcustom_save(payload.get("img"))
+                    if not raw:
+                        return self._json({"ok": False, "msg": err or "图片无效"}, 400)
+                    try:
+                        os.makedirs(PLCUSTOM_DIR, exist_ok=True)
+                        tmp = plcustom_path(name) + ".tmp"
+                        with open(tmp, "wb") as f:
+                            f.write(raw)
+                        os.replace(tmp, plcustom_path(name))
+                    except Exception as e:
+                        return self._json({"ok": False, "msg": "存不下：%r" % (e,)}, 500)
+                    meta = {"song": "", "custom": True, "ts": int(time.time())}
+                else:
+                    song = str(payload.get("song") or "").strip()
+                    if not song:
+                        return self._json({"ok": False, "msg": "缺少 song"}, 400)
+                    if songs and song not in songs:
+                        return self._json({"ok": False, "msg": "这首歌不在该歌单里"}, 400)
+                    meta = {"song": song, "ts": int(time.time())}
+                plcover_meta_set(name, meta)
+                return self._json(dict({"ok": True, "name": name}, **plcover_row(name)))
 
             if u.path == "/api/playlist_add":
                 name = str(payload.get("name") or "")
