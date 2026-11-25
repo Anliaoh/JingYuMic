@@ -3035,6 +3035,64 @@ def is_custom_playlist(name):
         return any(p.get("name") == name for p in _jy["playlists"])
 
 
+# --------------------------------------------------------- 自动归类歌单（==jy_builtin_pl==）
+# xiaomusic 的 JY-LANG 补丁每次刷新曲库都会重算「日语/英文/中文/纯音乐」，但它只写内存
+# self.music_list、不落 config —— 所以只有 /musiclist 里有，这里（歌单页的数据源，来自
+# jy_data.json + MUSIC_DIR 子目录）看不到。
+# 处理：把这四个当**只读歌单**透出去，列表和详情都直接转发 /musiclist，所有写操作拒绝。
+LANG_PLAYLISTS = ("日语", "英文", "中文", "纯音乐")
+_xm_ml_cache = {"ts": 0.0, "data": {}}
+_xm_ml_lock = threading.Lock()
+
+
+def xm_musiclist(max_age=3.0):
+    """取 xiaomusic 的 /musiclist，3 秒缓存。
+
+    歌单页会连着调两次（列表 + 打开详情），579 首那份 JSON 不必拉两遍；
+    取不到时返回上次的缓存，别让「服务没起来」把歌单页整个打空。
+    """
+    now = time.time()
+    with _xm_ml_lock:
+        if _xm_ml_cache["data"] and now - _xm_ml_cache["ts"] < max_age:
+            return _xm_ml_cache["data"]
+    d = {}
+    try:
+        with urllib.request.urlopen(XIAOMUSIC_API + "/musiclist", timeout=6) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        if not isinstance(d, dict):
+            d = {}
+    except Exception as e:
+        log("xm_musiclist fail %r" % (e,))
+    with _xm_ml_lock:
+        if d:
+            _xm_ml_cache["ts"] = now
+            _xm_ml_cache["data"] = d
+        return _xm_ml_cache["data"] or d
+
+
+def builtin_playlists():
+    """四个自动歌单（有歌才列）。用户自建了同名歌单的话，以自建的为准，这里跳过。"""
+    d = xm_musiclist()
+    with _data_lock:
+        own = set(p.get("name") for p in _jy["playlists"])
+    out = []
+    for nm in LANG_PLAYLISTS:
+        v = d.get(nm)
+        if not isinstance(v, list) or not v or nm in own:
+            continue
+        out.append({"name": nm, "count": len(v), "cover": v[0],
+                    "created": 0, "builtin": True})
+    return out
+
+
+def is_builtin_playlist(name):
+    """只读歌单？自建同名歌单存在时按自建算（可编辑）。"""
+    with _data_lock:
+        if any(p.get("name") == name for p in _jy["playlists"]):
+            return False
+    return name in LANG_PLAYLISTS
+
+
 def playlist_dir(name):
     return os.path.join(MUSIC_DIR, sanitize_filename(name))
 
@@ -9692,7 +9750,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "cover": songs[0] if songs else "",
                                  "created": meta.get("created", 0)})
                 rows.sort(key=lambda r: r.get("created", 0))
-                return self._json({"ok": True, "playlists": rows})
+                # 自动归类的四个歌单排最前面（只读，见 LANG_PLAYLISTS 那段注释）
+                return self._json({"ok": True, "playlists": builtin_playlists() + rows})
 
             if u.path == "/api/recent":
                 # 最近播放：playlog 里按 last 倒序；可选 min_count 用来出「喜欢/常听」
@@ -9717,6 +9776,11 @@ class Handler(BaseHTTPRequestHandler):
                 name = g("name")
                 if not name:
                     return self._json({"ok": False, "msg": "缺少 name"}, 400)
+                if is_builtin_playlist(name):
+                    # 只读歌单：直接转发 /musiclist（名字跟曲库一致，前端能直接点播）
+                    return self._json({"ok": True, "name": name,
+                                       "songs": list(xm_musiclist().get(name) or []),
+                                       "builtin": True})
                 return self._json({"ok": True, "name": name, "songs": playlist_songs(name)})
 
             if u.path == "/api/recommend":
@@ -10560,6 +10624,9 @@ class Handler(BaseHTTPRequestHandler):
                 name = sanitize_filename(str(payload.get("name") or ""))
                 if not name:
                     return self._json({"ok": False, "msg": "歌单名不能为空"}, 400)
+                if name in LANG_PLAYLISTS:
+                    return self._json({"ok": False,
+                                       "msg": "「%s」是自动归类的歌单名，换个名字" % name}, 400)
                 d = playlist_dir(name)
                 if os.path.isdir(d):
                     return self._json({"ok": False, "msg": "歌单已存在"}, 400)
@@ -10575,6 +10642,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/playlist_del":
                 name = str(payload.get("name") or "")
+                if is_builtin_playlist(name):
+                    return self._json({"ok": False,
+                                       "msg": "「%s」是自动归类的歌单，只读（要改就改 jy_instr.json）" % name}, 400)
                 d = playlist_dir(name)
                 if os.path.isdir(d):
                     # 歌单里是副本，清掉目录不会伤到根目录下的原文件
@@ -10594,6 +10664,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/playlist_rename":
                 name = str(payload.get("name") or "")
+                if is_builtin_playlist(name):
+                    return self._json({"ok": False,
+                                       "msg": "「%s」是自动归类的歌单，只读（要改就改 jy_instr.json）" % name}, 400)
                 new = sanitize_filename(str(payload.get("new_name") or ""))
                 if not new:
                     return self._json({"ok": False, "msg": "新名字不能为空"}, 400)
@@ -10616,6 +10689,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/playlist_add":
                 name = str(payload.get("name") or "")
+                if is_builtin_playlist(name):
+                    return self._json({"ok": False,
+                                       "msg": "「%s」是自动归类的歌单，只读（要改就改 jy_instr.json）" % name}, 400)
                 song = str(payload.get("song") or "")
                 res = add_to_playlist(name, song)
                 if res.get("ok"):
@@ -10624,6 +10700,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/playlist_remove":
                 name = str(payload.get("name") or "")
+                if is_builtin_playlist(name):
+                    return self._json({"ok": False,
+                                       "msg": "「%s」是自动归类的歌单，只读（要改就改 jy_instr.json）" % name}, 400)
                 song = str(payload.get("song") or "")
                 res = remove_from_playlist(name, song)
                 if res.get("ok"):

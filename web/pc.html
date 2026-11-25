@@ -5695,6 +5695,7 @@ function openAddToPl(song){
   var go = function(){
     var items = [];
     PL_LIST.forEach(function(p){
+      if(p.builtin) return;   /* v4.63：自动归类的歌单只读，别当成可加入的目标 */
       items.push({ t: p.name + "（" + (p.count || 0) + " 首）", fn:function(){ plAddSong(p.name, song); } });
     });
     if(items.length) items.push({ sep:true });
@@ -5830,7 +5831,8 @@ function renderPlList(){
   rows.forEach(function(p){
     var el = document.createElement("div");
     el.className = "plrow";
-    el.title = p.name + "（" + (p.count || 0) + " 首）· 右键更多";
+    el.title = p.name + "（" + (p.count || 0) + " 首）· " +
+               (p.builtin ? "自动归类（只读）" : "右键更多");
     el.innerHTML = '<div class="pcv">' + (p.cover ? '<img src="' + MM + "/api/cover?name=" +
       encodeURIComponent(p.cover) + '" alt="">' : '♪') + '</div><div class="pnm">' + esc(p.name) + '</div>' +
       (plStarOn(p.name) ? '<span class="pst">★</span>' : '');
@@ -5854,6 +5856,11 @@ function renderPlList(){
 }
 /* 歌单右键菜单 */
 function hidePlMenu(){ var m = $("plMenu"); if(m) m.classList.remove("on"); }
+/* v4.63：日语/英文/中文/纯音乐 是 JY-LANG 自动算的只读歌单（接口里带 builtin:true） */
+function isBuiltinPl(name){
+  for(var i = 0; i < PL_LIST.length; i++){ if(PL_LIST[i].name === name) return !!PL_LIST[i].builtin; }
+  return false;
+}
 function showPlMenu(ev, name){
   var m = $("plMenu");
   if(!m) return;
@@ -5866,11 +5873,13 @@ function showPlMenu(ev, name){
         plStarSet(name, on);
         renderPlList();
         toast(on ? ("已收藏「" + name + "」") : "已取消收藏");
-      } },
-    { t:"重命名…", fn:function(){ openRename(name); } },
-    { sep:true },
-    { t:"删除歌单", cls:"danger", fn:function(){ askDeletePl(name); } }
+      } }
   ];
+  if(!isBuiltinPl(name)){
+    items.push({ t:"重命名…", fn:function(){ openRename(name); } },
+               { sep:true },
+               { t:"删除歌单", cls:"danger", fn:function(){ askDeletePl(name); } });
+  }
   m.innerHTML = "";
   items.forEach(function(it){
     if(it.sep){ var sp = document.createElement("div"); sp.className = "msep"; m.appendChild(sp); return; }
@@ -5944,6 +5953,8 @@ function askDeletePl(name){
 }
 function openPlaylist(name){
   $("plTitle").textContent = name;
+  /* v4.63：自动归类歌单只读，标题栏的「删除歌单」要藏起来（右键里也已经没了） */
+  if($("plDel")) $("plDel").style.display = isBuiltinPl(name) ? "none" : "";
   $("viewPl").classList.add("on");
   ["viewLibrary","viewRec","viewSearch"].forEach(function(id){ $(id).classList.remove("on"); });
   VIEW = "pl";
@@ -5954,7 +5965,7 @@ function openPlaylist(name){
     lastPlList = list.map(function(x){ return typeof x === "string" ? x : (x.name || x.title || ""); });
     curPlName = name;
     $("plCount").textContent = list.length + " 首";
-    renderTable("plBody", list, { local:true, pl: name });
+    renderTable("plBody", list, { local:true, pl: isBuiltinPl(name) ? "" : name });
   }).catch(function(e){
     $("plBody").innerHTML = '<div class="empty">歌单加载失败：' + esc(e.message) + '</div>';
   });

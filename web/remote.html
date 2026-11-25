@@ -843,6 +843,10 @@
     border:none;border-radius:10px;padding:7px 12px;font-size:12px;font-family:inherit;cursor:pointer;
     background:var(--grad);color:#fff;font-weight:650;white-space:nowrap;
   }
+  /* v4.63：自动归类歌单（日语/英文/中文/纯音乐）的「自动归类」标签，不做成按钮 */
+  .pldetail-h .act.ro{
+    background:rgba(var(--fg),.06);color:var(--sub);font-weight:600;cursor:default;letter-spacing:.3px;
+  }
   /* 推荐 */
   .recwrap{flex:1 1 auto;overflow-y:auto;padding:2px 16px 28px;-webkit-overflow-scrolling:touch}
   .recwrap::-webkit-scrollbar{width:0}
@@ -3899,7 +3903,7 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       });
     };
     api(MM + "/api/playlists").then(function(d){
-      draw(((d && d.playlists) || []).filter(function(p){ return p.name !== "所有歌曲"; }));
+      draw(((d && d.playlists) || []).filter(function(p){ return p.name !== "所有歌曲" && !p.builtin; }));
     }).catch(function(e){
       box.appendChild(smi("歌单读取失败：" + ((e && e.message) || ""), { off: true }));
     });
@@ -6704,18 +6708,22 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       meta.innerHTML = '<div class="pn">' + esc(p.name) + '</div>' +
                        '<div class="pc">' + p.count + ' 首</div>';
       card.appendChild(meta);
-      var del = document.createElement("button");
-      del.className = "del";
-      del.textContent = "✕";
-      del.title = "删除歌单";
-      del.onclick = function(ev){
-        ev.stopPropagation();
-        if(!confirm("删除歌单「" + p.name + "」？歌单里的歌曲副本会被移除，原文件不受影响。")) return;
-        post(MM + "/api/playlist_del", { name: p.name })
-          .then(function(d){ if(d && d.ok){ toast("已删除歌单"); loadPlaylists(); } else toast("删除失败：" + (d && d.msg)); })
-          .catch(function(e){ toast("删除失败：" + e.message); });
-      };
-      card.appendChild(del);
+      /* v4.63：日语/英文/中文/纯音乐 是 JY-LANG 自动算出来的只读歌单（builtin），
+         没有「删除」也没有「移出」—— 删了下次刷新又回来，不如不给按钮。 */
+      if(!p.builtin){
+        var del = document.createElement("button");
+        del.className = "del";
+        del.textContent = "✕";
+        del.title = "删除歌单";
+        del.onclick = function(ev){
+          ev.stopPropagation();
+          if(!confirm("删除歌单「" + p.name + "」？歌单里的歌曲副本会被移除，原文件不受影响。")) return;
+          post(MM + "/api/playlist_del", { name: p.name })
+            .then(function(d){ if(d && d.ok){ toast("已删除歌单"); loadPlaylists(); } else toast("删除失败：" + (d && d.msg)); })
+            .catch(function(e){ toast("删除失败：" + e.message); });
+        };
+        card.appendChild(del);
+      }
       card.onclick = function(){ openPlaylist(p.name); };
       grid.appendChild(card);
     });
@@ -6726,13 +6734,13 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     plCur = name;
     fetch(MM + "/api/playlist?name=" + encodeURIComponent(name))
       .then(function(r){ return r.json(); })
-      .then(function(d){ renderPlaylistSongs(name, (d && d.songs) || []); })
+      .then(function(d){ renderPlaylistSongs(name, (d && d.songs) || [], !!(d && d.builtin)); })
       .catch(function(e){
         $("plWrap").innerHTML = emptyHtml("打开失败", (e && e.message) || "", "list");
       });
   }
 
-  function renderPlaylistSongs(name, songs){
+  function renderPlaylistSongs(name, songs, ro){
     var wrap = $("plWrap");
     wrap.innerHTML = "";
     var h = document.createElement("div");
@@ -6746,11 +6754,19 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
     ttl.className = "ttl";
     ttl.textContent = name;
     h.appendChild(ttl);
-    var add = document.createElement("button");
-    add.className = "act";
-    add.textContent = "＋ 添加歌曲";
-    add.onclick = function(){ switchPane("list"); $("q").focus(); toast("搜索歌曲，点结果即可加入「" + name + "」"); };
-    h.appendChild(add);
+    if(!ro){
+      var add = document.createElement("button");
+      add.className = "act";
+      add.textContent = "＋ 添加歌曲";
+      add.onclick = function(){ switchPane("list"); $("q").focus(); toast("搜索歌曲，点结果即可加入「" + name + "」"); };
+      h.appendChild(add);
+    }else{
+      var tag = document.createElement("span");
+      tag.className = "act ro";
+      tag.textContent = "自动归类";
+      tag.title = "这个歌单按歌词/艺人自动归类，新歌下载后自动进来，不能手工增删";
+      h.appendChild(tag);
+    }
     wrap.appendChild(h);
 
     if(!songs.length){
@@ -6773,19 +6789,21 @@ var AVLAG = AVDEF;     // 全局默认：服务端为准，没设过就用出厂
       mid.innerHTML = '<div class="nm">' + esc(sp.title) + '</div>' +
                       (sp.artist ? '<div class="ar">' + esc(sp.artist) + '</div>' : '');
       row.appendChild(mid);
-      var rm = document.createElement("button");
-      rm.className = "dlbtn";
-      rm.textContent = "移出";
-      rm.onclick = function(ev){
-        ev.stopPropagation();
-        post(MM + "/api/playlist_remove", { name: name, song: n })
-          .then(function(d){
-            if(d && d.ok){ toast("已移出"); openPlaylist(name); }
-            else toast("移出失败：" + (d && d.msg));
-          })
-          .catch(function(e){ toast("移出失败：" + e.message); });
-      };
-      row.appendChild(rm);
+      if(!ro){
+        var rm = document.createElement("button");
+        rm.className = "dlbtn";
+        rm.textContent = "移出";
+        rm.onclick = function(ev){
+          ev.stopPropagation();
+          post(MM + "/api/playlist_remove", { name: name, song: n })
+            .then(function(d){
+              if(d && d.ok){ toast("已移出"); openPlaylist(name); }
+              else toast("移出失败：" + (d && d.msg));
+            })
+            .catch(function(e){ toast("移出失败：" + e.message); });
+        };
+        row.appendChild(rm);
+      }
       row.onclick = function(){ playSong(n); };
       wrap.appendChild(row);
     });
