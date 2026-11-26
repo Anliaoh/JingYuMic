@@ -6492,7 +6492,7 @@ function sugRender(kw){
         var h2 = "";
         sugItems.forEach(function(it, i){
           if(it.type === "local"){
-            h2 += '<div class="qi2" data-i="' + i + '"><div class="sic">♪</div><div class="stt">' + hl(it.title, _kw) +
+            h2 += '<div class="qi2" data-i="' + i + '"><div class="stt" style="padding-left:14px">' + hl(it.title, _kw) +
               (it.artist ? '<span style="color:var(--dim)"> · ' + esc(it.artist) + '</span>' : '') +
               '</div><div class="ssub">' + (it.fromTrans ? "译" : "本地") + '</div></div>';
           }else if(it.type === "pl"){
@@ -6514,7 +6514,7 @@ function sugRender(kw){
   var html = "";
   items.forEach(function(it, i){
     if(it.type === "local"){
-      html += '<div class="qi2" data-i="' + i + '"><div class="sic">♪</div><div class="stt">' + hl(it.title, kw) +
+      html += '<div class="qi2" data-i="' + i + '"><div class="stt" style="padding-left:14px">' + hl(it.title, kw) +
         (it.artist ? '<span style="color:var(--dim)"> · ' + esc(it.artist) + '</span>' : '') +
         '</div><div class="ssub">本地</div></div>';
     }else if(it.type === "pl"){
@@ -6552,8 +6552,7 @@ $("q").addEventListener("input", function(){
   clearTimeout(sugTimer);
   var kw = (this.value || "").trim();
   if(!kw){
-    if(document.activeElement === this && recentQ().length) sugRender("");
-    else sugClose();
+    sugClose();   // ==jysugclean== 空输入不弹任何建议
     return;
   }
   sugTimer = setTimeout(function(){ sugRender(kw); }, 60);
@@ -6561,7 +6560,7 @@ $("q").addEventListener("input", function(){
 $("q").addEventListener("focus", function(){
   var kw = (this.value || "").trim();
   if(kw) sugRender(kw);
-  else if(recentQ().length) sugRender("");
+  else sugClose();   // ==jysugclean== 空输入不弹任何建议
 });
 $("q").addEventListener("blur", function(){ setTimeout(sugClose, 150); });
 $("q").addEventListener("keydown", function(e){
