@@ -6426,6 +6426,12 @@ function pushRecentQ(kw){
   h.unshift(kw);
   try{ localStorage.setItem("jy_qhist", JSON.stringify(h.slice(0, 8))); }catch(e){}
 }
+function delRecentQ(name){   // ==jysughist== 删一条最近搜索并重画
+  var h = recentQ().filter(function(x){ return x !== name; });
+  try{ localStorage.setItem("jy_qhist", JSON.stringify(h)); }catch(e){}
+  if(h.length) sugRender("");
+  else sugClose();
+}
 function hl(text, kw){
   var t = esc(text), k = esc(kw);
   if(!k) return t;
@@ -6439,7 +6445,7 @@ function sugRender(kw){
   if(!s) return;
   var kwL = kw.toLowerCase(), items = [], seen = {};
   var hit = 0;
-  for(var i = 0; i < libSongs.length && hit < 8; i++){
+  for(var i = 0; kwL && i < libSongs.length && hit < 8; i++){  // ==jysughist== 空词不扫全库
     var n = libSongs[i];
     if(seen[n]) continue;
     var sn = splitName(n);
@@ -6449,7 +6455,7 @@ function sugRender(kw){
       hit++;
     }
   }
-  PL_LIST.forEach(function(p){
+  if(kwL) PL_LIST.forEach(function(p){   // ==jysughist== 空词不匹配歌单
     if(items.length >= 10) return;
     if(p.name.toLowerCase().indexOf(kwL) >= 0 && !seen["pl:" + p.name]){
       seen["pl:" + p.name] = 1;
@@ -6471,10 +6477,10 @@ function sugRender(kw){
      /api/localsearch 已含 §82/§87 的翻译，这里直接复用，零新增接口。 */
   sugTransKw = kw;
   (function(_kw){
-    api(MM + "/api/localsearch?q=" + encodeURIComponent(_kw) + "&limit=30")
+    api(MM + "/api/sugsyn?q=" + encodeURIComponent(_kw) + "&limit=12")   // ==jysugsuggest== 轻量译名对比
       .then(function(d){
         if(sugTransKw !== _kw) return;        // 竞态：用户已经输入了别的词
-        var tr = ((d && d.local) || []).map(function(r){ return typeof r === "string" ? { name: r } : r; });
+        var tr = ((d && d.names) || []).map(function(n){ return { name: n }; });  // ==jysugsuggest==
         if(!tr.length) return;
         var have = {};
         sugItems.forEach(function(it){ if(it.type === "local") have[it.title || it.name] = 1; });
@@ -6499,14 +6505,20 @@ function sugRender(kw){
             h2 += '<div class="qi2" data-i="' + i + '"><div class="sic">☰</div><div class="stt">' + hl(it.name, _kw) +
               '</div><div class="ssub">歌单 · ' + it.count + ' 首</div></div>';
           }else{
-            h2 += '<div class="qi2 hist" data-i="' + i + '"><div class="sic">⏱</div><div class="stt">' + esc(it.name) +
-              '</div><div class="ssub">最近</div></div>';
+            h2 += '<div class="qi2 hist" data-i="' + i + '"><div class="sic">⏱</div><div class="stt">' + esc(it.name) + '</div>' +
+              '<span class="qdel" data-del="' + esc(it.name) + '" title="删除这条记录" style="margin-left:auto;padding:0 8px;color:var(--dim);cursor:pointer">×</span>' +
+              '<div class="ssub">最近</div></div>';  // ==jysughist==
           }
         });
         ts.innerHTML = h2;
         ts.classList.add("on");
         [].forEach.call(ts.querySelectorAll(".qi2"), function(el){
-          el.onmousedown = function(e){ e.preventDefault(); sugPick(parseInt(el.dataset.i, 10)); };
+          el.onmousedown = function(e){
+            e.preventDefault();
+            var d = e.target && e.target.closest ? e.target.closest(".qdel") : null;
+            if(d){ delRecentQ(d.getAttribute("data-del")); return; }  // ==jysughist==
+            sugPick(parseInt(el.dataset.i, 10));
+          };
         });
       }).catch(function(){});
   })(kw);
@@ -6521,14 +6533,20 @@ function sugRender(kw){
       html += '<div class="qi2" data-i="' + i + '"><div class="sic">☰</div><div class="stt">' + hl(it.name, kw) +
         '</div><div class="ssub">歌单 · ' + it.count + ' 首</div></div>';
     }else{
-      html += '<div class="qi2 hist" data-i="' + i + '"><div class="sic">⏱</div><div class="stt">' + esc(it.name) +
-        '</div><div class="ssub">最近</div></div>';
+      html += '<div class="qi2 hist" data-i="' + i + '"><div class="sic">⏱</div><div class="stt">' + esc(it.name) + '</div>' +
+        '<span class="qdel" data-del="' + esc(it.name) + '" title="删除这条记录" style="margin-left:auto;padding:0 8px;color:var(--dim);cursor:pointer">×</span>' +
+        '<div class="ssub">最近</div></div>';  // ==jysughist==
     }
   });
   s.innerHTML = html;
   s.classList.add("on");
   [].forEach.call(s.querySelectorAll(".qi2"), function(el){
-    el.onmousedown = function(e){ e.preventDefault(); sugPick(parseInt(el.dataset.i, 10)); };
+    el.onmousedown = function(e){
+      e.preventDefault();
+      var d = e.target && e.target.closest ? e.target.closest(".qdel") : null;
+      if(d){ delRecentQ(d.getAttribute("data-del")); return; }  // ==jysughist==
+      sugPick(parseInt(el.dataset.i, 10));
+    };
   });
 }
 function sugPick(i){
@@ -6552,7 +6570,8 @@ $("q").addEventListener("input", function(){
   clearTimeout(sugTimer);
   var kw = (this.value || "").trim();
   if(!kw){
-    sugClose();   // ==jysugclean== 空输入不弹任何建议
+    if(document.activeElement === this && recentQ().length) sugRender("");  // ==jysughist== 空框显示最近记录
+    else sugClose();
     return;
   }
   sugTimer = setTimeout(function(){ sugRender(kw); }, 60);
@@ -6560,7 +6579,8 @@ $("q").addEventListener("input", function(){
 $("q").addEventListener("focus", function(){
   var kw = (this.value || "").trim();
   if(kw) sugRender(kw);
-  else sugClose();   // ==jysugclean== 空输入不弹任何建议
+  else if(recentQ().length) sugRender("");  // ==jysughist== 点搜索框显示最近记录
+  else sugClose();
 });
 $("q").addEventListener("blur", function(){ setTimeout(sugClose, 150); });
 $("q").addEventListener("keydown", function(e){

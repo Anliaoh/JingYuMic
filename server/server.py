@@ -6030,9 +6030,11 @@ def _jy_search_expand(kw):
         kn = _jy_st_norm(key)
         if len(kn) >= 2 and (kn == k or kn in k or k in kn):
             return True
-        if kp and len(kp) >= 3:
+        # ==jystpyguard== 纯拉丁 key（k-on/secret base）不转拼音再子串：
+        #   k-on→kon 会命中「超时空辉夜姬」的 kong（空），把轻音少女拖进来。
+        if kp and len(kp) >= 3 and not kn.isascii():
             knp = _jy_st_pystr(key, pytab)
-            if knp and (knp == kp or (len(knp) >= 3 and (knp in kp or kp in knp))):
+            if knp and (knp == kp or (len(knp) >= 4 and (knp in kp or kp in knp))):
                 return True
         return False
 
@@ -6081,6 +6083,22 @@ def _jy_st_strict(fn, real_name):
     return b in a or a in b
 
 
+def sugsyn(kw, limit=12):   # ==jysugsyn== 轻量译名对比：只认别名表登记的译名
+    """输入词 ↔ 曲库各曲登记的译名，严格整名匹配；不跑 fuzzy、不读标签。"""
+    names, seen = [], set()
+    expanded = _jy_search_expand(kw)
+    terms = [t for t, is_tr in expanded if is_tr]
+    if not terms:
+        return []
+    for fn, _root, _sz in local_files():
+        if any(_jy_st_strict(fn, t) for t in terms):
+            if fn not in seen:
+                seen.add(fn); names.append(fn)
+            if len(names) >= limit:
+                break
+    return names
+
+
 def search_local(kw, limit=30):
     rows = []
     _expanded = _jy_search_expand(kw)          # ==jysearchtrans== 翻译扩展
@@ -6109,6 +6127,7 @@ def search_local(kw, limit=30):
             "artist": artist,
             "playlist": rel_root,
             "score": round(sc, 2),
+            "by_trans": bool(_trans),   # ==jybytrans== True=严格译名命中；False=原文模糊命中
         })
     rows.sort(key=lambda r: -r["score"])
     try:
@@ -9901,6 +9920,15 @@ class Handler(BaseHTTPRequestHandler):
                                    "py": "%d.%d" % (sys.version_info[0], sys.version_info[1]),
                                    "uptime": int(time.time() - BOOT_TS),
                                    "ts": int(time.time())})
+
+            if u.path == "/api/sugsyn":   # ==jysugsyn== 轻量译名对比（PC 搜索建议专用）
+                if not has_q:
+                    return self._json({"ok": False, "msg": "缺少 q"}, 400)
+                _kw = g("q").strip()
+                if not _kw:
+                    return self._json({"ok": True, "keyword": "", "names": []})
+                return self._json({"ok": True, "keyword": _kw,
+                                   "names": sugsyn(_kw, gi("limit", 12))})
 
             if u.path == "/api/localsearch":
                 # 「参数没给」和「给了空串」要分开：前者是调用方写错（400），
