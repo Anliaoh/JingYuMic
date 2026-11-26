@@ -2355,7 +2355,7 @@ var devPosSec = -1;      // 设备报的真实进度（秒）
 var devDurSec = 0;
 /* 设备把同一首从「歌尾」绕回「开头」的时刻。本端看到这个「绕回」就该切下一首。
    ⚠ v4.17 实测订正：以前这里写「loop_type=1 = 设备单曲循环 → 复播」，是错的。
-   真机（did=0）实测：
+   真机（did=<your-device-id>）实测：
      · 页面上切四种模式，/setplayermode 全返回 OK，但设备 loop_type 恒为 1；
      · 一首歌播到尾（274.4s）时，设备自己换成了下一首（203.1s），没有复播。
    也就是说决定「下一首是谁」的是 xiaomusic 自己的软件 play_type
@@ -6417,6 +6417,7 @@ $("qGo").onclick = doSearch;
 
 /* 搜索建议：本地曲库 + 歌单名 + 最近搜索，纯前端即时出 */
 var sugIdx = -1, sugItems = [], sugTimer = null;
+var sugTransKw = '';  // ==jysugtrans== 翻译建议的关键词快照（防竞态）
 function recentQ(){
   try{ return JSON.parse(localStorage.getItem("jy_qhist") || "[]") || []; }catch(e){ return []; }
 }
@@ -6432,7 +6433,7 @@ function hl(text, kw){
   if(i < 0) return t;
   return t.slice(0, i) + "<b>" + t.slice(i, i + k.length) + "</b>" + t.slice(i + k.length);
 }
-function sugClose(){ var s = $("qSug"); if(s) s.classList.remove("on"); sugIdx = -1; sugItems = []; }
+function sugClose(){ var s = $("qSug"); if(s) s.classList.remove("on"); sugIdx = -1; sugItems = []; sugTransKw = ''; }  // ==jysugtrans==
 function sugRender(kw){
   var s = $("qSug");
   if(!s) return;
@@ -6465,6 +6466,50 @@ function sugRender(kw){
   }
   sugItems = items;
   sugIdx = -1;
+  /* ==jysugtrans== 字面建议不足时，问服务端要翻译命中（别名→真名）。
+     纯前端只看文件名，「辉夜姬/超时空辉夜姬」这类别名永远出不来；
+     /api/localsearch 已含 §82/§87 的翻译，这里直接复用，零新增接口。 */
+  sugTransKw = kw;
+  (function(_kw){
+    api(MM + "/api/localsearch?q=" + encodeURIComponent(_kw) + "&limit=30")
+      .then(function(d){
+        if(sugTransKw !== _kw) return;        // 竞态：用户已经输入了别的词
+        var tr = ((d && d.local) || []).map(function(r){ return typeof r === "string" ? { name: r } : r; });
+        if(!tr.length) return;
+        var have = {};
+        sugItems.forEach(function(it){ if(it.type === "local") have[it.title || it.name] = 1; });
+        var added = 0;
+        tr.forEach(function(r){
+          var n = r.name || r.song || r.title;
+          var sn = splitName(n);
+          if(!n || have[sn.title] || added >= 10) return;
+          have[sn.title] = 1; added++;
+          sugItems.push({ type: "local", name: n, title: sn.title,
+                          artist: sn.artist || r.artist || "", fromTrans: true });
+        });
+        if(!added) return;
+        var ts = $("qSug"); if(!ts) return;
+        var h2 = "";
+        sugItems.forEach(function(it, i){
+          if(it.type === "local"){
+            h2 += '<div class="qi2" data-i="' + i + '"><div class="sic">♪</div><div class="stt">' + hl(it.title, _kw) +
+              (it.artist ? '<span style="color:var(--dim)"> · ' + esc(it.artist) + '</span>' : '') +
+              '</div><div class="ssub">' + (it.fromTrans ? "译" : "本地") + '</div></div>';
+          }else if(it.type === "pl"){
+            h2 += '<div class="qi2" data-i="' + i + '"><div class="sic">☰</div><div class="stt">' + hl(it.name, _kw) +
+              '</div><div class="ssub">歌单 · ' + it.count + ' 首</div></div>';
+          }else{
+            h2 += '<div class="qi2 hist" data-i="' + i + '"><div class="sic">⏱</div><div class="stt">' + esc(it.name) +
+              '</div><div class="ssub">最近</div></div>';
+          }
+        });
+        ts.innerHTML = h2;
+        ts.classList.add("on");
+        [].forEach.call(ts.querySelectorAll(".qi2"), function(el){
+          el.onmousedown = function(e){ e.preventDefault(); sugPick(parseInt(el.dataset.i, 10)); };
+        });
+      }).catch(function(){});
+  })(kw);
   if(!items.length){ s.classList.remove("on"); return; }
   var html = "";
   items.forEach(function(it, i){
@@ -8679,7 +8724,7 @@ function fillAbout(){
     abSet("abRowAcct", "abAcct", "acct", t, !!(d && d.valid));
   }).catch(function(){ abSet("abRowAcct", "abAcct", "acct", "未知", false); });
   var cc = $("abCmd");
-  if(cc) cc.textContent = 'ssh -p 8022 u0_a000@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
+  if(cc) cc.textContent = 'ssh -p 8022 u0_a263@' + (location.hostname || "平板IP") + ' "bash ~/restart_mm.sh"';
   var out = $("abOut");
   if(out) out.style.display = "none";
 }
