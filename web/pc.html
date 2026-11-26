@@ -313,7 +313,7 @@ body.maxed .winbtns .icoRestore{display:block}
 .qsug.on{display:flex}
 .qsug .qi2{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer;font-size:12.5px;color:var(--txt)}
 .qsug .qi2:hover,.qsug .qi2.sel{background:var(--surf2)}
-.qsug .qi2 .sic{width:26px;height:26px;border-radius:6px;flex:0 0 auto;display:grid;place-items:center;background:linear-gradient(145deg,#E7EDF3,#D3DCE6);color:#8A97A6;font-size:11px}
+.qsug .qi2 .sic{width:auto;height:auto;flex:0 0 auto;display:grid;place-items:center;background:none;color:#8A97A6;font-size:13px}  /* ==jyrestoreicon== 图标不背景 */
 .qsug .qi2.hist .sic{background:none;border-radius:0;width:auto;height:auto;color:#B5763B;font-size:13px}  /* ==jyhistnobg== 去方块背景 */
 .qsug .qi2 .stt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .qsug .qi2 .stt b{color:var(--q);font-weight:650}
@@ -6416,7 +6416,7 @@ function renderTableInto(box, list, isLocal){
 $("qGo").onclick = doSearch;
 
 /* 搜索建议：本地曲库 + 歌单名 + 最近搜索，纯前端即时出 */
-var sugIdx = -1, sugItems = [], sugTimer = null;
+var sugIdx = -1, sugItems = [], sugTimer = null, sugBlurTimer = null;  // ==jydelfix==
 var sugTransKw = '';  // ==jysugtrans== 翻译建议的关键词快照（防竞态）
 function recentQ(){
   try{ return JSON.parse(localStorage.getItem("jy_qhist") || "[]") || []; }catch(e){ return []; }
@@ -6427,8 +6427,11 @@ function pushRecentQ(kw){
   try{ localStorage.setItem("jy_qhist", JSON.stringify(h.slice(0, 8))); }catch(e){}
 }
 function delRecentQ(name){   // ==jysughist== 删一条最近搜索并重画
+  clearTimeout(sugBlurTimer);   // ==jydelfix== 先撤掉失焦关闭的定时，否则重画后又被关
   var h = recentQ().filter(function(x){ return x !== name; });
   try{ localStorage.setItem("jy_qhist", JSON.stringify(h)); }catch(e){}
+  try{ $("q").focus(); }catch(e){}   // ==jydelfix== 抢回焦点，避免新一轮 blur 排队
+  clearTimeout(sugBlurTimer);
   if(h.length) sugRender("");
   else sugClose();
 }
@@ -6498,7 +6501,7 @@ function sugRender(kw){
         var h2 = "";
         sugItems.forEach(function(it, i){
           if(it.type === "local"){
-            h2 += '<div class="qi2" data-i="' + i + '"><div class="stt" style="padding-left:14px">' + hl(it.title, _kw) +
+            h2 += '<div class="qi2" data-i="' + i + '"><div class="sic">♪</div><div class="stt">' + hl(it.title, _kw) +
               (it.artist ? '<span style="color:var(--dim)"> · ' + esc(it.artist) + '</span>' : '') +
               '</div><div class="ssub">' + (it.fromTrans ? "译" : "本地") + '</div></div>';
           }else if(it.type === "pl"){
@@ -6516,7 +6519,7 @@ function sugRender(kw){
           el.onmousedown = function(e){
             e.preventDefault();
             var d = e.target && e.target.closest ? e.target.closest(".qdel") : null;
-            if(d){ delRecentQ(d.getAttribute("data-del")); return; }  // ==jysughist==
+            if(d){ e.stopPropagation(); delRecentQ(d.getAttribute("data-del")); return; }  // ==jydelstop==
             sugPick(parseInt(el.dataset.i, 10));
           };
         });
@@ -6526,7 +6529,7 @@ function sugRender(kw){
   var html = "";
   items.forEach(function(it, i){
     if(it.type === "local"){
-      html += '<div class="qi2" data-i="' + i + '"><div class="stt" style="padding-left:14px">' + hl(it.title, kw) +
+      html += '<div class="qi2" data-i="' + i + '"><div class="sic">♪</div><div class="stt">' + hl(it.title, kw) +
         (it.artist ? '<span style="color:var(--dim)"> · ' + esc(it.artist) + '</span>' : '') +
         '</div><div class="ssub">本地</div></div>';
     }else if(it.type === "pl"){
@@ -6544,7 +6547,7 @@ function sugRender(kw){
     el.onmousedown = function(e){
       e.preventDefault();
       var d = e.target && e.target.closest ? e.target.closest(".qdel") : null;
-      if(d){ delRecentQ(d.getAttribute("data-del")); return; }  // ==jysughist==
+      if(d){ e.stopPropagation(); delRecentQ(d.getAttribute("data-del")); return; }  // ==jydelstop==
       sugPick(parseInt(el.dataset.i, 10));
     };
   });
@@ -6582,7 +6585,7 @@ $("q").addEventListener("focus", function(){
   else if(recentQ().length) sugRender("");  // ==jysughist== 点搜索框显示最近记录
   else sugClose();
 });
-$("q").addEventListener("blur", function(){ setTimeout(sugClose, 150); });
+$("q").addEventListener("blur", function(){ clearTimeout(sugBlurTimer); sugBlurTimer = setTimeout(sugClose, 150); });  // ==jydelfix==
 $("q").addEventListener("keydown", function(e){
   if(e.key === "ArrowDown"){ e.preventDefault(); sugMove(1); return; }
   if(e.key === "ArrowUp"){ e.preventDefault(); sugMove(-1); return; }
