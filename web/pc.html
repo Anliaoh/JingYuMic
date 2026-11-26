@@ -249,6 +249,11 @@ nav .navitem.on svg{color:var(--q)}
 }
 .plrow .pcv img{width:100%;height:100%;object-fit:cover;display:block}
 .plrow .pnm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* v4.71：右侧常显首歌数（以前只在 title 里，要悬停才看得到）。
+   等宽数字，避免刷新数字时整列跳动；当前打开的这条压低对比度，别抢绿字。 */
+.plrow .pcnt{flex:0 0 auto;font-size:10.5px;line-height:1;color:var(--dim);font-variant-numeric:tabular-nums;letter-spacing:.2px}
+.plrow:hover .pcnt{color:var(--sub)}
+.plrow.on .pcnt{color:inherit;opacity:.7;font-weight:500}
 .sidefoot{margin-top:6px;padding:8px 4px 2px;display:flex;align-items:center;gap:4px;border-top:1px solid var(--line)}
 .sidegear{
   display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--sub);
@@ -2633,7 +2638,45 @@ try{ var _m = localStorage.getItem("jy_mode"); if(_m) mode = _m; }catch(e){}
    重开 PC 时轴恰好是 by=pc，于是本端永不采纳，界面停在 localStorage 里的旧模式，
    另一端却是新模式 → 用户看到「两端播放模式没同步」。首次同步后回到原条件。 */
 var modeBoot = true;
+/* v4.76（JY-MODEBOOT）：启动首拍把本端认定的模式**落一次到服务端**（只做一次）。
+   为什么必须有：xiaomusic 没有读取 play_type 的接口，页面重启只能从
+   localStorage / 组播轴恢复「显示」，而服务端那层可能早被语音口令、另一端或
+   进程重启改掉了 —— 界面写着「单曲循环」、服务端却在随机，歌一完就切走；
+   反过来界面写着「列表循环」、服务端是单曲，就一直重放同一首。
+   2026-11-26 实测：reload 后界面/轴都是 one，服务端仍是 rnd，全程没有一个
+   /setplayermode（probe_mode_sync.js FAIL）。轴上有值说明另一端刚操作过，
+   上面已无条件采纳；这里把最终值同步下去，幂等且静默（dotts=False，不碰设备）。 */
+var modeBootPushed = false;
+/* 把模式静默写到服务端（dotts=False，不碰设备、不断歌）。m 缺省 = 本端当前模式。 */
+function modePush(m){
+  if(!DID || DID === "0") return;
+  api("/setplayermode?did=" + encodeURIComponent(DID) + "&mode=" + encodeURIComponent(m || mode))
+    .catch(function(){});
+}
 function modeIdx(){ for(var i=0;i<MODES.length;i++){ if(MODES[i].k === mode) return i; } return 0; }
+/* JY-PLRND（2026-11-26）用户口径：「点播歌单，应该随机播放歌单的某一首，
+   而且默认是随机播放；点下一首，切的也是歌单里的歌。」
+   队列整份洗牌（集合不变），起播洗牌后第一首，模式静默切「随机」——
+   跟服务端 play_music_list 的随机起播同口径。洗的是副本，歌单页显示顺序不动。 */
+function shuffleCopy(a){
+  var l = (a || []).slice(), i, j, t;
+  for(i = l.length - 1; i > 0; i--){
+    j = Math.floor(Math.random() * (i + 1));
+    t = l[i]; l[i] = l[j]; l[j] = t;
+  }
+  return l;
+}
+function setRndModeSilent(){
+  if(mode === "rnd") return;
+  mode = "rnd";
+  try{ localStorage.setItem("jy_mode", mode); }catch(e){}
+  renderMode();
+  try{ trayNowPush(); }catch(e){}
+  if(boxOn()){
+    try{ gpPublish({ mode: mode }, true); }catch(e){}   // 轴跟上，别让旧轴把随机打回去
+    modePush("rnd");                                    // 只写服务端，不碰设备、不断歌
+  }
+}
 function renderMode(){
   var icos = {
     seq:'<path d="M4 7h9a4 4 0 014 4v6"/><path d="M14 14l3 3 3-3"/><path d="M4 17h4"/>',
@@ -3354,13 +3397,44 @@ $("trashClear").onclick = function(){
 };
 
 /* 统一入口：勾了几台就派几台 —— 电脑音响走本地，音箱投给 xiaomusic */
-function playItem(item){
+/* v4.67：把队列换成 list，游标钉在 item 上。
+   「单曲」也必须有队列（不能设成空）：pcNext 在队列为空时直接 return，
+   电脑独响时歌一放完就停在那儿不动了；设成「就这一首」又会绕回自己（原地重播）。
+   所以单曲的 list 传全库 —— 唱完就是「全部播放」的下一首，和设备自己的队列同口径。 */
+function alignQueue(list, item){
+  var l = list.slice(), k = -1;
+  for(var i = 0; i < l.length; i++){ if(l[i] && l[i].name === item.name){ k = i; break; } }
+  if(k >= 0){ queue = l; queueIdx = k; }
+  else{
+    queue = [ { name: item.name, id: item.id, online: !!item.online } ];
+    queueIdx = 0;
+  }
+  try{ localStorage.setItem("jy_queue", JSON.stringify(queue));
+       localStorage.setItem("jy_queueidx", String(queueIdx)); }catch(e){}
+}
+
+function playItem(item, opt){
+  opt = opt || {};
   if(!pcOn() && !boxOn()){ toast("至少选一台输出设备"); return; }
+  /* v4.67：用户口径 ——「点某首歌，就不走歌单了，除非点的是歌单」。
+     · 点「▶ 播放全部」（fromPl）→ 队列 = 整张歌单，唱完接下一首；
+     · 点歌单里的某一行      → 队列 = 全库，只放这一首的上下文。
+     这一层必须在这里做（不能只靠 playOnPc）：只音箱出声时 playOnPc 根本不会被调用，
+     queue 会一直停在**上一次**的列表上，播完就按那张旧队列接歌。 */
+  if(VIEW === "pl" && lastPlList.length){
+    if(opt.fromPl){
+      /* JY-PLRND：opt.plQueue = 洗牌后的队列（「播放全部」随机起播用） */
+      alignQueue((opt.plQueue || lastPlList).map(function(n){ return { name: n }; }), item);
+    }else{
+      opt = { singlePl: true };
+      alignQueue(libSongs.map(function(n){ return { name: n }; }), item);
+    }
+  }
   /* 环绕不能各起各的：电脑秒出声，音箱要拉流缓冲（正好一个「延迟」的量），
      同时开播的话开头一两秒必然错开。走 surStart，音箱先起、电脑对齐了再进。 */
-  if(pcOn() && boxOn() && BOX_ONLINE){ surStart(item, item.online ? { gateMs: 22000 } : null); return; }
+  if(pcOn() && boxOn() && BOX_ONLINE){ surStart(item, item.online ? { gateMs: 22000, singlePl: !!opt.singlePl } : { singlePl: !!opt.singlePl }); return; }
   surGateCancel();
-  if(pcOn()) playOnPc(item);
+  if(pcOn()) playOnPc(item, opt);
   if(boxOn()) boxPlay(item);
 }
 
@@ -3590,7 +3664,7 @@ function buildQueueFrom(list, startIdx){
 
 function playOnPc(item, opt){
   if(!audio){ toast("本机播放初始化失败"); return; }
-  var list = currentListForQueue();
+  var list = currentListForQueue(opt);
   var idx = -1;
   for(var i=0;i<list.length;i++){
     var q = list[i];
@@ -3606,7 +3680,10 @@ function playOnPc(item, opt){
   renderQueue();
 }
 
-function currentListForQueue(){
+function currentListForQueue(opt){
+  /* v4.67：歌单里点的**单曲**不拿这张歌单当队列（见 alignQueueToLib）。
+     注意只有「播放全部」那条路带 fromPl，走不到这里。 */
+  if(opt && opt.singlePl && libSongs.length) return libSongs.map(function(n){ return { name: n }; });
   // 依据当前视图给出队列
   if(VIEW === "library" && libSongs.length) return libSongs.map(function(n){ return { name: n }; });
   if(VIEW === "pl" && lastPlList.length) return lastPlList.map(function(n){ return { name: n }; });
@@ -4097,6 +4174,10 @@ function poll(){
         gSwitchAt = Date.now();
         endAt = 0;              // 新的一首：上一首的「刚播完」解除
         nearEndAt = 0; nearEndName = "";   // 歌尾痕迹也要清
+        /* v4.65（JY-ARMSNAP·硬闸，与 remote.html 同口径）：设备已经自己换歌了，
+           本端在途的推进必须作废，否则它到点还会再喊一刀「下一首」把新歌顶掉。
+           钉 armName 快照只能防「排程早于采纳」，这条防「排程晚于采纳」。 */
+        if(advT){ clearTimeout(advT); advT = null; advArm = 0; advForce = 0; }
         setCover(curName, true);
         if(lyricOn){ loadLyric(curName); paintLyric(true); }
         else loadLyric(curName, true);
@@ -4200,11 +4281,15 @@ function poll(){
                          (devAtEnd || (!!nearEndAt && (Date.now() - nearEndAt < 45000) &&
                                        (!nearEndName || sameSong(nearEndName, curName))));
       var justEnded = false;
+      /* v4.75（JY-HANDOFF，与 App 端同步）：判定「唱完」时当场记下是哪一首。
+         本函数后半段会把 curName 采纳成服务端刚切过去的新歌，ensureAdvance
+         要拿这个快照去比，否则会「为上一首判的唱完、给刚起播的新歌排一趟推进」。 */
+      var justEndedName = "";
       if(!stl && (baseDur > 3 || (devAtEnd && _dd > 3)) && stoppedAtEnd && !(gSwitchAt && Date.now() - gSwitchAt < 4000)){
         /* 「刚唱完」要一直续期：只要没换歌也没真起播，保护窗就不能过期。
            以前 10 秒一到窗口失效，别处的续播/seek 就溜进来了，
            而续播是从设备的内部位置接着放，那个位置在歌尾 = 从头再放一遍。 */
-        if(Date.now() - endAt > 3000) justEnded = true;
+        if(Date.now() - endAt > 3000){ justEnded = true; justEndedName = curName; }
         endAt = Date.now();
       }
       /* ---- 设备自己把这首绕回开头了 = 复播已经发生 ----
@@ -4233,6 +4318,7 @@ function poll(){
       if(loopedBack){
         devWrapAt = 0;        // 这条证据用掉就作废：一次绕回只推一次，别连环跳
         justEnded = true;
+        justEndedName = curName;
         endAt = Date.now();
       }
       /* 本端意图优先（和 App 端同一套规矩）：
@@ -4363,7 +4449,7 @@ function poll(){
            一台跳 N+1、一台跳 N+2，用户听到的就是「切歌变成两首不同的歌」。
            只有「电脑没出声」（或本机没装歌）时才让 poll 这一路控场。 */
         if(!pcOn() || !audio || !audio.src || audio.paused || audio.ended)
-          ensureAdvance(loopedBack);
+          ensureAdvance(loopedBack, justEndedName);
       }
     }else{
       /* 设备忙（正在换歌/缓冲）时 playingmusic 会短暂不返回 OK，
@@ -4422,15 +4508,32 @@ function gpOtherAge(){
 /* force：设备已经把这首从头绕回去了（真的在出声，但那是要被切掉的重放）。
    普通推进看到 playing=true 就收手，那种「又响起来了」正是要处理的情况，
    所以这一趟必须放行 —— 但仍然保留「先问设备」和「本端有队列就按队列接」。 */
-function ensureAdvance(force){
+function ensureAdvance(force, expect){
   if(fallbackHeld()) return;         // v4.12：兜底刚落地的 5 秒内不再排新的推进
   /* v4.12b：切歌切换窗口内不推进，避免把「正在切换」误判为「播完要接下一首」。 */
   if(gSwitchAt && Date.now() - gSwitchAt < 4000) return;
+  /* v4.75（JY-HANDOFF，与 App 端同口径）：这一拍判出的「唱完了」是上一首的。
+     poll 里 justEnded 用的是采纳新歌**之前**那首的证据（设备还报旧 aid、status=2
+     的换曲瞬态），而 adopt 分支已把 curName 改成服务端刚切过去的新歌；armName
+     于是取成刚起播的新歌，advAsk 拿新歌和新歌比 → 判「它还在放」→ doAdvance
+     喊「下一首」，新歌一秒没唱就被顶掉（2026-11-26 15:36 CST 实证，详见
+     remote.html 同名注释）。expect 与当前 curName 不是同一首 = 交接已落地，收工。 */
+  if(expect && curName && !sameSong(expect, curName)) return;
   if(force) advForce = Date.now();
   /* 已经排上一趟了就别再往后推：loopedBack 会连着好几拍都成立，
      每拍都 clearTimeout + 重排 4.2 秒的话，这一推永远也轮不到执行。 */
   if(advT && Date.now() - advArm < 10000) return;
   advArm = Date.now();
+  /* v4.65（JY-ARMSNAP·PC 补齐）：排程这一刻把「判定对象」钉住，别用活的 curName。
+     现场（2026-11-26 10:04，UTC 02:04，xiaomusic_run.log）：
+       02:04:45 服务端定时器把「夢限大」切到「halca - ウィークエンドロール」；
+       本端这一轮推进是**为「夢限大」排的**，poll 在 02:04:46 已把 curName
+       采纳成 halca；advAsk 拿设备回报的 halca 和活的 curName halca 比 → 同
+       → 判「它还在放」→ 落到 doAdvance → 无条件喊「下一首」；
+       02:04:47 一条 POST /cmd 落下去 → halca 只活 5 秒被顶掉。
+     钉住快照后：设备回报 halca ≠ armName「夢限大」→ 判「它已经跳过去了」收工。
+     这条 remote.html 在 v4.62 已修，pc 端当时漏了 —— 两端必须同口径。 */
+  var armName = curName || "";
   clearTimeout(advT);
   advT = setTimeout(function(){
     advT = null;
@@ -4459,16 +4562,16 @@ function ensureAdvance(force){
     (function advAsk(){
       api("/playingmusic" + advQd).then(function(pm){
         if(pm && pm.ret === "OK"){
-          if(pm.cur_music && !sameSong(pm.cur_music, curName)) return;   // 它已经跳过去了
+          if(pm.cur_music && !sameSong(pm.cur_music, (armName || curName))) return;   // 它已经跳过去了
           /* 它自己又播起来了。设备状态优先：设备说没出声、只是 xiaomusic 的标志
              还没翻的，这一推照推（否则又会卡在「唱完了不切下一首」）。 */
           if(extPaused) return;
           if(!frc && (devPlay === true || (devPlay !== false && pm.is_playing))) return;
         }
-        if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc); return; }
+        if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc, armName); return; }
         setTimeout(advAsk, ADV_WATCH);
       }).catch(function(){
-        if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc); return; }
+        if(Date.now() - advArmAt >= ADV_WAIT){ doAdvance(frc, armName); return; }
         setTimeout(advAsk, ADV_WATCH);
       });
     })();
@@ -4558,9 +4661,12 @@ function pcAdvFallback(anchor, verified){
    手点要立刻响应，不许被 pre-flight 的 ~15ms 请示吞掉；自动推进必须先请示。
    （pc.html 的「下一首」按钮走的是自己的 sendCmd/pcNext，不经过本函数；
      保留这个形参是为了两端同构，也防止以后有人把按钮接到这里来。） */
-function pcAdvViaBox(auto){
+function pcAdvViaBox(auto, expect){
   if(fallbackHeld()) return;         // v4.12：兜底刚落地的 5 秒内不再推
-  var before = curName, tries = 0;
+  /* v4.65（JY-ARMSNAP·PC 补齐）：before 用 doAdvance 传来的快照（armName），
+     不要用活的 curName —— 否则 pre-flight 那句 `devMovedFrom(nm, before)`
+     会把「设备已经在下一首上」误判成「还在同一首」，照发不误。 */
+  var before = (expect && expect.length) ? expect : curName, tries = 0;
   /* v4.11：核对窗口到期 ≠「设备没换」。xiaomusic 换曲要 2~3 秒，窗口只有 1.4 秒，
      兜底前再问一次设备；并且「设备说没换、本端却已经跟到别的歌」时本拍不出手，
      交给下一拍 poll 重新判定 —— 这一步是「跳两首」的最后一道拦截。
@@ -4606,11 +4712,14 @@ function pcAdvViaBox(auto){
     fireOnce();
   }).catch(fireOnce);
 }
-function doAdvance(force){
+function doAdvance(force, expect){
   if(!curName) return;
   /* v4.12b：切歌切换窗口内不推进，避免把「正在切换」误判为「播完要接下一首」。 */
   if(gSwitchAt && Date.now() - gSwitchAt < 4000) return;
-  var before = curName;   // v4.12b S1A：此刻的歌名才是「要被接走的那首」，后面 6~7 秒里 curName 可能已被采纳成新歌
+  /* v4.65（JY-ARMSNAP·PC 补齐）：expect 是 ensureAdvance 排程时钉住的判定对象。
+     有它就用它 —— 活的 curName 可能已经被 poll 采纳成下一首了，
+     再拿它当 before 就等于「从新歌往后数一首」= 跳过新歌。 */
+  var before = (expect && expect.length) ? expect : curName;   // v4.12b S1A：此刻的歌名才是「要被接走的那首」，后面 6~7 秒里 curName 可能已被采纳成新歌
   /* v3.91：导入歌词的弹框开着时不自动切歌 —— 用户正在挑歌/粘词，
      底下悄悄换了人，很容易把人带沟里（v3.91 之前就是这么把歌词写到下一首的）。
      弹框关掉后下一次「唱完」会照常推进。 */
@@ -4628,7 +4737,7 @@ function doAdvance(force){
        （1.4s + 1.3s × 2 ≈ 4 秒）才肯硬切 —— 那 4 秒正是用户听到的「从头复播 5 秒才切」。
        绕回已经确认，直接硬切，别再等。 */
     if(force){ pcAdvFallback(before); return; }
-    pcAdvViaBox(true);       // 自动推进：先问设备在放什么，再喊下一首并核对
+    pcAdvViaBox(true, before);       // 自动推进：先问设备在放什么，再喊下一首并核对
   }
 }
 /* v4.17：播放列表弹窗里的当前行 + 「播放中」音符。
@@ -4883,6 +4992,18 @@ function pcStepLocal(dir){
   if(li >= 0){ buildQueueFrom(lst, li); pcNext(dir); return true; }
   return false;
 }
+/* v4.80（JY-INSERT2）：问服务端「下一首播放」的队首；有就顺手出队。
+   非音箱输出 / 端点不通（老服务端）→ 回调空串，调用方走原路。 */
+var jyInsBusy = false;
+function jyInsertPop(cb){
+  if(jyInsBusy){ cb(""); return; }
+  if(!boxOn() || !BOX_ONLINE || !DID || DID === "0"){ cb(""); return; }
+  jyInsBusy = true;
+  api("/jy_insert_pop?did=" + encodeURIComponent(DID)).then(function(d){
+    jyInsBusy = false;
+    cb((d && d.ret === "OK" && d.name) ? String(d.name) : "");
+  }).catch(function(){ jyInsBusy = false; cb(""); });
+}
 $("btnNext").onclick = function(){
   if(pcOn()){ pcNext(1); return; }
   /* v4.23：音箱输出时原来发「下一首」语音口令（sendCmd → TTS → 让音箱自己解释），
@@ -4890,7 +5011,27 @@ $("btnNext").onclick = function(){
      改成和「电脑自己播」同一套：按本端队列算出下一首，直接 boxPlay 推给音箱。
      v4.40：队列没建好时也按当前视图列表现建一份（见 pcStepLocal），只有当前歌
      确实不在任何列表里才退回口令。 */
-  if(boxOn() && BOX_ONLINE && pcStepLocal(1)) return;
+  /* v4.80（JY-INSERT2）：手动「下一首」先问服务端有没有排着「下一首播放」的歌 —— 有就放它。
+     下面那条 pcStepLocal(1) 是**本端算队列**再 /playmusic 点一首，完全绕开服务端的
+     插播队列；不问一下的话，点了「下一首播放」再点「下一首」，那张票永远取不到
+     （2026-11-26 17:35 实测：队列里还挂着「雑踏、僕らの街」，人却切到了南山南）。 */
+  if(boxOn() && BOX_ONLINE){
+    jyInsertPop(function(nm){
+      if(nm){
+        var it = null;
+        for(var i = 0; i < queue.length; i++){
+          if(queue[i] && sameSong(queue[i].name, nm)){ it = queue[i]; break; }
+        }
+        if(!it) it = { name: nm, online: false };
+        toast("下一首播放：" + (splitName(nm).title || nm));
+        surStart(it, { gateMs: it.online ? 22000 : 7000 });
+        return;
+      }
+      if(pcStepLocal(1)) return;
+      sendCmd("下一首").then(function(){ setTimeout(poll, 900); });
+    });
+    return;
+  }
   sendCmd("下一首").then(function(){ setTimeout(poll, 900); });
 };
 $("btnPrev").onclick = function(){
@@ -5209,6 +5350,10 @@ function switchView(v, tab){
   if(v === "library") loadListSoft();
   if(v === "rec") loadRecommend();
   if(v === "trash") loadTrash();
+  /* v4.66：定位键的显隐只在「换歌 / 滚动 / 改窗口」时重算，换视图不会重算 ——
+     切到「我的歌单」时带过来的是上一屏的判定结果，所以歌单页几乎看不到这颗键。
+     换视图后补算一次（歌单页走 openPlaylist，那里也补了一次）。 */
+  syncLocateFabSoon();
 }
 
 /* ---------------- 前进/后退 ---------------- */
@@ -5470,7 +5615,12 @@ if($("btnRecPlay")) $("btnRecPlay").onclick = function(){
 var recSeed = 0;   // 换一批计数：递增种子让当天也能换新一批
 if($("btnRecReload")) $("btnRecReload").onclick = function(){ recSeed++; loadRecommend(); };
 if($("btnPlPlay")) $("btnPlPlay").onclick = function(){
-  if(lastPlList.length) playItem({ name: lastPlList[0] }); else toast("歌单是空的");
+  /* v4.67：只有这一颗才是「按歌单播」—— 把整张歌单灌成队列。
+     v4.81（JY-PLRND）：不再固定第一首 —— 洗牌后随机起播，队列跟着洗牌序走。 */
+  if(!lastPlList.length){ toast("歌单是空的"); return; }
+  var q = shuffleCopy(lastPlList);
+  setRndModeSilent();
+  playItem({ name: q[0] }, { fromPl: true, plQueue: q });
 };
 $("btnRefresh").onclick = function(){ loadList(); toast("列表已刷新"); };
 /* v4.40：曲库三态排序按钮（三态循环 + jy_sort 持久化）。启动即回显存下来的状态，
@@ -5712,6 +5862,20 @@ function showRowMenu(ev, ctx){
 /* 下一首播放 = 插到当前播放位置的下一位。队列里已经有它就把它挪过来（不重复占位）。 */
 function pcQueueNext(it){
   if(!it || !it.name){ toast("这首歌排不进队列"); return; }
+  /* v4.79（JY-INSERT）：「下一首播放」必须真正排进**音箱**的队列。
+     以前这里只改本机 queue，而音箱放的是 xiaomusic 自己的列表 —— 插不进去。
+     2026-11-26 17:11 实测：点了、提示「已排到下一首」，歌放完照原样往下走，
+     日志里一条请求都没有。现在音箱输出下直接发服务端插播队列。 */
+  if(boxOn() && DID && DID !== "0"){
+    var _t = splitName(it.name).title || it.name;
+    api("/jy_insert_next?did=" + encodeURIComponent(DID) + "&name=" + encodeURIComponent(it.name))
+      .then(function(d){
+        if(d && d.ret === "OK") toast("已排到下一首：" + _t);
+        else toast("排不进去：" + ((d && d.err) || (d && d.ret) || "服务端没响应"));
+      })
+      .catch(function(e){ toast("排不进去：" + (e.msg || e.message)); });
+    return;
+  }
   var same = function(x){ return x && (x.name === it.name || (it.id && x.id === it.id)); };
   var hit = -1;
   for(var i = 0; i < queue.length; i++){ if(same(queue[i])){ hit = i; break; } }
@@ -5873,6 +6037,7 @@ function renderPlList(){
     el.title = p.name + "（" + (p.count || 0) + " 首）· " +
                (p.builtin ? "自动归类（只读）" : "右键更多");
     el.innerHTML = '<div class="pcv">♪</div><div class="pnm">' + esc(p.name) + '</div>' +
+      '<span class="pcnt">' + (p.count || 0) + ' 首</span>' +
       (plStarOn(p.name) ? '<span class="pst">★</span>' : '');
     /* v4.64：缩略图 = 歌单里某首歌自己的封面（服务端挑，可以是用户指定的那首或上传的图）。
        换过封面后 cover_ts 变，带在 src 上破缓存；取不到就留 ♪。
@@ -6103,6 +6268,8 @@ function openPlaylist(name){
     curPlName = name;
     $("plCount").textContent = list.length + " 首";
     renderTable("plBody", list, { local:true, pl: isBuiltinPl(name) ? "" : name });
+    /* v4.66：歌单页 DOM 刚换完，定位键要按「这一屏有没有正在播放那行、在不在可视区」重算 */
+    syncLocateFabSoon();
   }).catch(function(e){
     $("plBody").innerHTML = '<div class="empty">歌单加载失败：' + esc(e.message) + '</div>';
   });
@@ -8868,6 +9035,26 @@ function gpAbsorb(s, mine){
   }else if(boxOn() && G.mode && G.mode === mode){
     modeBoot = false;
   }
+  /* v4.76（JY-MODEBOOT）：启动首拍跟服务端对一次模式。**读优先**：
+       ① 读到真值就以它为准 —— 语音口令改过模式，界面也能跟上（页面本来读不到）；
+       ② 轴上有更近的一次操作（另一端刚点的）→ 以轴为准，并把它落到服务端；
+       ③ 读不到（旧版服务端 404 / 网络失败）→ 退回「把本端认的模式推下去」，
+          也就是这道闸上线之前的老行为，至少保证界面和 play_type 不会各说各话。 */
+  if(boxOn() && !modeBootPushed && DID && DID !== "0"){
+    modeBootPushed = true;
+    api("/getplayermode?did=" + encodeURIComponent(DID)).then(function(d){
+      var sm = d && d.mode;
+      if(!sm){ modePush(); return; }
+      /* v4.81（JY-PLRND）：轴比服务端旧（语音口令 / 点歌单自动切随机都只写服务端），
+         这里一律采纳服务端 —— 以前拿轴回推，刚设好的随机会被旧轴打回去。 */
+      if(sm !== mode && sm !== "sin"){        // sin（单曲播放）不在四个按钮里，别硬套
+        mode = sm;
+        try{ localStorage.setItem("jy_mode", mode); }catch(e){}
+        renderMode();
+        try{ trayNowPush(); }catch(e){}
+      }
+    }).catch(function(){ modePush(); });
+  }
   if(pcPaused && !newer) G.playing = false;   // 本机暂停中：轴上的旧账不算数
   gpTick = Date.now();
   gpTickPos = (typeof s.pos === "number") ? s.pos : (s.anchorPos || 0);
@@ -9296,7 +9483,7 @@ function surStart(item, opt){
   var seq = surGateSeq;
   SUR_GATE = true;
   surGateRetry = 0;
-  playOnPc(item, { hold: true });      // 电脑先把歌载进来，先不出声
+  playOnPc(item, { hold: true, singlePl: !!opt.singlePl });      // 电脑先把歌载进来，先不出声
   boxPlay(item);                        // 音箱先起
   surPushCheck(item);                   // v4.03：5 秒后核对它是不是真换了
   surGateRun(seq, opt, item.name || "");      // v4.06：把目标歌名带下去，门里要拿它核位置

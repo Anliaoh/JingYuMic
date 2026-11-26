@@ -2567,6 +2567,14 @@ def _lrc_title_mismatch(name, lrc):
             hit = ((ns1 and (ns1 in ns or ns in ns1)) and (na1 and (na1 in na or na in na1)))
             if not hit:                     # 也允许反过来写
                 hit = ((na1 and (na1 in ns or ns in na1)) and (ns1 and (ns1 in na or na in ns1)))
+            if not hit:
+                # JY-REMIX：remix / 翻唱版的首行惯例写「原唱 - 歌名 (xx Remix)」，而
+                # display_meta 的歌手是 remix 作者，两边天然对不上 —— 以前会把这类歌词
+                # 当串词删掉重配，用户的版本（含手调时间轴）就没了。
+                # 只在「歌名确实同一首」且「首行原文里出现了当前歌手」时放行；
+                # 真串词（连歌名都对不上）照删不误。
+                if ns1 and (ns1 in ns or ns in ns1) and na and na in str(first).lower():
+                    hit = True
         elif ns:
             hit = bool(ns1 and (ns1 in ns or ns in ns1))
         elif na:
@@ -5938,10 +5946,116 @@ def drop_local_files():
 # --- end JY-LOCALCACHE ---
 
 
+# ==jysearchtrans== 搜索框自动翻译识别（针对本地曲库，两端前端共用）
+_JY_ST_ALIAS = os.path.join(CONF_DIR, "jy_alias.json")
+_JY_ST_PY = os.path.join(CONF_DIR, "jy_pinyin.json")
+_jy_st_cache = {"m": 0, "alias": {}, "py": {}}
+
+
+def _jy_st_load():
+    """别名表 + 拼音表按 mtime 热加载；任一缺失就降级为纯字面匹配。"""
+    try:
+        m = max(os.path.getmtime(_JY_ST_ALIAS), os.path.getmtime(_JY_ST_PY))
+    except Exception:
+        m = 0
+    c = _jy_st_cache
+    if c["alias"] and c["m"] == m:
+        return c["alias"], c["py"]
+    try:
+        with open(_JY_ST_ALIAS, encoding="utf-8") as _f:
+            alias = json.load(_f)
+    except Exception:
+        alias = {}
+    try:
+        with open(_JY_ST_PY, encoding="utf-8") as _f:
+            py = json.load(_f)
+    except Exception:
+        py = {}
+    c["m"], c["alias"], c["py"] = m, alias, py
+    return alias, py
+
+
+def _jy_st_norm(s):
+    import unicodedata
+    t = unicodedata.normalize("NFC", str(s or "")).lower()
+    return t.strip(" -_")
+
+
+def _jy_st_pystr(s, pytab):
+    """汉字->拼音串；假名/生僻字丢掉，英文数字保留。"""
+    out = []
+    for ch in _jy_st_norm(s):
+        if ch in pytab:
+            out.append(pytab[ch])
+        elif ch.isascii() and ch.isalnum():
+            out.append(ch)
+    return "".join(out)
+
+
+def _jy_search_expand(kw):
+    """把搜索词翻译成候选真名。返回 [(词, 是否翻译), ...]，原文永远排第一。"""
+    alias, pytab = _jy_st_load()
+    terms = [(kw.strip(), False)]
+    if not alias:
+        return terms
+    k = _jy_st_norm(kw)
+    kp = _jy_st_pystr(kw, pytab) if pytab else ""
+    seen = {k}
+
+    def _hit(key):
+        kn = _jy_st_norm(key)
+        if len(kn) >= 2 and (kn == k or kn in k or k in kn):
+            return True
+        if kp and len(kp) >= 3:
+            knp = _jy_st_pystr(key, pytab)
+            if knp and (knp == kp or (len(knp) >= 3 and (knp in kp or kp in knp))):
+                return True
+        return False
+
+    # song 段：中文译名 / 听错形式 -> 真实曲名（值已校验全部命中曲库文件名）
+    for key, val in (alias.get("song") or {}).items():
+        if isinstance(val, str) and _hit(key) and val not in seen:
+            terms.append((val, True))
+            seen.add(val)
+    # 歌手 / 作品 / 关键词段：译名 -> 真名（值为 str 或 list）
+    for sec in ("artist", "keyword", "work"):
+        for key, val in (alias.get(sec) or {}).items():
+            if not _hit(key):
+                continue
+            for v in (val if isinstance(val, list) else [val]):
+                if isinstance(v, str) and v not in seen:
+                    terms.append((v, True))
+                    seen.add(v)
+    if len(terms) > 12:            # 短词（如「爱」）别把一堆歌拖进来
+        terms = terms[:12]
+    return terms
+
+
+def _jy_st_strict(fn, real_name):
+    """译名命中的严格匹配：整名子串才算，不走 fuzzy_match 的切词
+    （否则真名里的 'is' 'Love' 会被切成 token，带出一堆无关英文歌）。"""
+    a = clean_query(fn).lower()
+    b = clean_query(real_name).lower()
+    if not a or not b:
+        return False
+    return b in a or a in b
+
+
 def search_local(kw, limit=30):
     rows = []
+    _expanded = _jy_search_expand(kw)          # ==jysearchtrans== 翻译扩展
+    _tr_terms = [t for t, is_tr in _expanded if is_tr]
     for fn, rel_root, _sz in local_files():
-        sc = fuzzy_match(fn, kw)
+        sc = fuzzy_match(fn, kw)                # 原文命中完全照旧，零回归
+        _trans = False
+        # 译名严格整名命中给 18 分：高于「两字片段」模糊分（~16），低于原文
+        # 完整子串命中（>=20），既压得住噪声，又不会盖过真正的原文命中。
+        if _tr_terms and sc < 18:
+            for _term in _tr_terms:
+                if _jy_st_strict(fn, _term):
+                    if 18 > sc:
+                        sc, _trans = 18, True
+                    break
         if sc <= 0:
             continue
         # v4.34：改用 display_meta（内嵌 ID3 优先，剥曲目号）——「01 Remember.flac」这类
@@ -5957,6 +6071,12 @@ def search_local(kw, limit=30):
             "score": round(sc, 2),
         })
     rows.sort(key=lambda r: -r["score"])
+    try:
+        _t = [t for t, is_tr in _expanded if is_tr]
+        if _t and rows:
+            log("[JYSEARCHTRANS] %r 扩为 %r -> %d 首" % (kw, _t[:6], len(rows)))
+    except Exception:
+        pass
     return rows[:limit]
 
 
