@@ -6085,6 +6085,50 @@ def _jy_st_strict(fn, real_name):
 
 def sugsyn(kw, limit=12):   # ==jysugsyn== 轻量译名对比：只认别名表登记的译名
     """输入词 ↔ 曲库各曲登记的译名，严格整名匹配；不跑 fuzzy、不读标签。"""
+    # ==jysugdirect== 预存关键词查表直返：已登记的组（超时空辉夜姬=10首OST、
+    # 孤独摇滚=結束バンド…）结果早已存好，精确命中就直接用，不再逐首比对。
+    _al, _py = _jy_st_load()
+    _k = _jy_st_norm(kw)
+    _files = [fn for fn, _r, _s in local_files()]
+    _byname = {}
+    for _fn in _files:
+        _byname[_fn.rsplit(".", 1)[0]] = _fn
+    _direct = None
+    for _sec in ("common", "song", "artist", "work", "keyword"):
+        for _key, _val in (_al.get(_sec) or {}).items():
+            if _jy_st_norm(_key) != _k:      # 精确相等，不做子串（防误命中）
+                continue
+            if isinstance(_val, dict):       # common 聚合：songs 直取 / artists 前缀
+                _want = _val.get("songs") or []
+                if isinstance(_want, str):
+                    _want = [_want]
+                _picked = [ _byname[s] for s in _want if s in _byname ]
+                if not _picked:
+                    for _a in (_val.get("artists") or []):
+                        _picked += [fn for fn in _files
+                                    if fn.startswith(str(_a) + " - ") or fn.startswith(str(_a) + "-")]
+                if _picked:
+                    _direct = _picked
+            elif isinstance(_val, str):      # song/artist/keyword：单值或歌手名
+                if _val in _byname:
+                    _direct = [_byname[_val]]
+                else:
+                    _direct = [fn for fn in _files
+                               if fn.startswith(_val + " - ") or fn.startswith(_val + "-")]
+            elif isinstance(_val, list):     # work：真名列表 / 歌手列表
+                _picked = [_byname[s] for s in _val if s in _byname]
+                if not _picked:
+                    for _a in _val:
+                        _picked += [fn for fn in _files
+                                    if fn.startswith(str(_a) + " - ") or fn.startswith(str(_a) + "-")]
+                _direct = _picked
+            if _direct:
+                break
+        if _direct:
+            break
+    if _direct:
+        return _direct[:limit]
+
     names, seen = [], set()
     expanded = _jy_search_expand(kw)
     terms = [t for t, is_tr in expanded if is_tr]
