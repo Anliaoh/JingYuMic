@@ -855,6 +855,30 @@ def _brk_allow(src):
         return True
 
 
+def _brk_trip(src, err=""):
+    """==jyrecfast== 源返回 5xx（整站故障）时立刻熔断，不等攒够 3 次。
+
+    与 _brk_fail 的区别：这个直接进冷却（按 _BRK_STEPS 退避），因为 5xx 不是
+    频控、不是「这一条没搜到」，是上游挂了 —— 再发 5 个关键词也只是各等一趟 520。
+    冷却中 _brk_allow 会彻底跳过，推荐随即走 jy_search_all 兜底，响应从 30s 降下来。
+    """
+    now = time.time()
+    with _BRK_LOCK:
+        st = _BRK.setdefault(src, {"fails": 0, "until": 0.0, "step": 0, "probing": False})
+        st["probing"] = False
+        if now < float(st.get("until") or 0.0):
+            return                      # 已在冷却，别重复升档（同批并发请求）
+        step = int(st.get("step") or 0)
+        dur = _BRK_STEPS[step] if step < len(_BRK_STEPS) else _BRK_STEPS[-1]
+        st["until"] = now + dur
+        st["step"] = step + 1
+        st["fails"] = 0
+        st["cool_sec"] = dur
+        st["err"] = str(err)[:120]
+    log("BRK: %s 5xx 立刻冷却 %.0fs（第 %d 档）%s"
+        % (src, dur, st["step"], str(err)[:80]))
+
+
 def _brk_ok(src):
     """源活着：失败计数、退避档位、冷却状态全清。"""
     with _BRK_LOCK:
@@ -4161,7 +4185,7 @@ def lan_ip():
     """本机在局域网里的地址（电视要能直接拉这个地址上的 mp4）"""
     try:
         sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sk.connect(("192.168.1.1", 9))
+        sk.connect(("192.168.31.1", 9))
         ip = sk.getsockname()[0]
         sk.close()
         return ip
@@ -8965,7 +8989,8 @@ def recommend(kw=None, limit=12, tags=None, seed="", likes=None, tagmode=None):
     try:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         with ThreadPoolExecutor(max_workers=6) as ex:
-            futs = dict((ex.submit(search, k, 10, 8), k) for k in kws[:6])
+            # ==jyrecfast== wait 8→3：上游忙时抢不到锁早放弃，让 jy_search_all 兜底早点接手
+            futs = dict((ex.submit(search, k, 10, 3), k) for k in kws[:6])
             for f in as_completed(futs, timeout=12):
                 try:
                     rs = f.result()
