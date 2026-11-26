@@ -6050,6 +6050,22 @@ def _jy_search_expand(kw):
                 if isinstance(v, str) and v not in seen:
                     terms.append((v, True))
                     seen.add(v)
+    # ==jysearchcommon== common 聚合段：专辑/组合关键词（超时空辉夜姬、辉夜姬…）
+    # 语音侧 _jy_alias_hit 已认这批词，搜索侧也要认，两侧口径才一致。
+    # 只展开 songs / artists / keywords；lang（日语=几百首）和 playlists 绝不展开，
+    # 否则一个短词就把整库拖进来。
+    for _ck, _cv in (alias.get("common") or {}).items():
+        if not isinstance(_cv, dict) or not _hit(_ck):
+            continue                      # key 不命中搜索词就跳过（如「日语」搜「辉夜姬」）
+        for _field in ("songs", "artists", "keywords"):
+            _vals = _cv.get(_field) or []
+            if isinstance(_vals, str):
+                _vals = [_vals]
+            for _v in _vals:
+                if not isinstance(_v, str):
+                    continue
+                if _v not in seen:
+                    terms.append((_v, True)); seen.add(_v)
     if len(terms) > 12:            # 短词（如「爱」）别把一堆歌拖进来
         terms = terms[:12]
     return terms
